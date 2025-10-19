@@ -128,7 +128,7 @@ store_contract() {
         --gas "$GAS" \
         --gas-adjustment "$GAS_ADJUSTMENT" \
         --gas-prices "$GAS_PRICES" \
-        --broadcast-mode sync \
+        --broadcast-mode block \
         --yes \
         --output json 2>&1)
 
@@ -148,10 +148,8 @@ store_contract() {
     fi
 
     print_info "Transaction hash: $tx_hash"
-    print_info "Waiting for transaction to be included in a block..."
-    sleep 10
 
-    # Query transaction to get code_id
+    # With block mode, transaction is already included, query immediately
     local tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
 
     if ! echo "$tx_result" | jq empty 2>/dev/null; then
@@ -193,7 +191,7 @@ instantiate_contract() {
         --gas-adjustment "$GAS_ADJUSTMENT" \
         --gas-prices "$GAS_PRICES" \
         --no-admin \
-        --broadcast-mode sync \
+        --broadcast-mode block \
         --yes \
         --output json 2>&1)
 
@@ -213,10 +211,8 @@ instantiate_contract() {
     fi
 
     print_info "Transaction hash: $tx_hash"
-    print_info "Waiting for transaction to be included in a block..."
-    sleep 10
 
-    # Query transaction to get contract address
+    # With block mode, transaction is already included, query immediately
     local tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
 
     if ! echo "$tx_result" | jq empty 2>/dev/null; then
