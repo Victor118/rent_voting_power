@@ -26,21 +26,26 @@ help:
 
 # Build & optimize all contracts
 build: artifacts
-	@echo "Building all contracts..."
-	@RUSTFLAGS="-C link-arg=-s -C target-feature=-reference-types" \
-		cargo build --target wasm32-unknown-unknown --release
+	@echo "Building all contracts (CosmWasm compatible)..."
+	@cargo build --target wasm32-unknown-unknown --release --lib
 	@echo ""
-	@echo "Copying WASM files to artifacts..."
+	@echo "Processing WASM files for CosmWasm compatibility..."
 	@cp target/wasm32-unknown-unknown/release/lsm_staking.wasm artifacts/
 	@cp target/wasm32-unknown-unknown/release/proposal_option_locker.wasm artifacts/
+	@echo "Stripping WASM files..."
+	@if command -v wasm-strip &> /dev/null; then \
+		wasm-strip artifacts/lsm_staking.wasm; \
+		wasm-strip artifacts/proposal_option_locker.wasm; \
+		echo "✓ WASM files stripped"; \
+	fi
 	@if command -v wasm-opt &> /dev/null; then \
-		echo "Optimizing with wasm-opt..."; \
-		wasm-opt -Oz artifacts/lsm_staking.wasm -o artifacts/lsm_staking.wasm; \
-		wasm-opt -Oz artifacts/proposal_option_locker.wasm -o artifacts/proposal_option_locker.wasm; \
-		echo "✓ WASM files optimized"; \
+		echo "Optimizing with wasm-opt (CosmWasm compatible)..."; \
+		wasm-opt --mvp-features --enable-sign-ext -Oz artifacts/lsm_staking.wasm -o artifacts/lsm_staking.wasm; \
+		wasm-opt --mvp-features --enable-sign-ext -Oz artifacts/proposal_option_locker.wasm -o artifacts/proposal_option_locker.wasm; \
+		echo "✓ WASM files optimized for CosmWasm"; \
 	else \
-		echo "⚠  wasm-opt not found, using unoptimized WASM"; \
-		echo "   Install for optimization: apt install binaryen"; \
+		echo "⚠  wasm-opt not found - WASM may not be compatible with older CosmWasm versions"; \
+		echo "   Install binaryen: apt install binaryen or brew install binaryen"; \
 	fi
 	@echo ""
 	@echo "✓ WASM files ready in artifacts/"

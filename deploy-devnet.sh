@@ -149,7 +149,7 @@ store_contract() {
 
     print_info "Transaction hash: $tx_hash"
     print_info "Waiting for transaction to be included in a block..."
-    sleep 6
+    sleep 10
 
     # Query transaction to get code_id
     local tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
@@ -214,7 +214,7 @@ instantiate_contract() {
 
     print_info "Transaction hash: $tx_hash"
     print_info "Waiting for transaction to be included in a block..."
-    sleep 6
+    sleep 10
 
     # Query transaction to get contract address
     local tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
