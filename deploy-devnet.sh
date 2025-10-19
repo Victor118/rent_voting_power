@@ -120,6 +120,7 @@ store_contract() {
     print_info "Storing $contract_name contract..."
 
     # Execute transaction and capture output
+    # Filter out "gas estimate:" line that appears before JSON
     local tx_output=$(gaiad tx wasm store "$wasm_file" \
         --from "$WALLET_NAME" \
         --keyring-backend "$KEYRING_BACKEND" \
@@ -130,7 +131,7 @@ store_contract() {
         --gas-prices "$GAS_PRICES" \
         --broadcast-mode sync \
         --yes \
-        --output json 2>&1)
+        --output json 2>&1 | grep -v "^gas estimate:")
 
     # Check if output is valid JSON
     if ! echo "$tx_output" | jq empty 2>/dev/null; then
@@ -201,6 +202,7 @@ instantiate_contract() {
     print_info "Init message: $init_msg"
 
     # Execute transaction and capture output
+    # Filter out "gas estimate:" line that appears before JSON
     local tx_output=$(gaiad tx wasm instantiate "$code_id" "$init_msg" \
         --from "$WALLET_NAME" \
         --keyring-backend "$KEYRING_BACKEND" \
@@ -213,7 +215,7 @@ instantiate_contract() {
         --no-admin \
         --broadcast-mode sync \
         --yes \
-        --output json 2>&1)
+        --output json 2>&1 | grep -v "^gas estimate:")
 
     # Check if output is valid JSON
     if ! echo "$tx_output" | jq empty 2>/dev/null; then
