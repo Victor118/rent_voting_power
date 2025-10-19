@@ -54,7 +54,7 @@ build: artifacts
 # Build with Docker optimizer (optional, if Docker is available)
 build-docker:
 	@echo "Building and optimizing all contracts with cosmwasm/optimizer..."
-	@if ! command -v docker &> /dev/null; then \
+	@if ! which docker &> /dev/null && ! test -x /usr/bin/docker; then \
 		echo "Error: Docker is required for this target"; \
 		echo "Use 'make build' instead for non-Docker build"; \
 		exit 1; \
