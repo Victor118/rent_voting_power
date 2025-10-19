@@ -128,7 +128,7 @@ store_contract() {
         --gas "$GAS" \
         --gas-adjustment "$GAS_ADJUSTMENT" \
         --gas-prices "$GAS_PRICES" \
-        --broadcast-mode block \
+        --broadcast-mode sync \
         --yes \
         --output json 2>&1)
 
@@ -148,9 +148,29 @@ store_contract() {
     fi
 
     print_info "Transaction hash: $tx_hash"
+    print_info "Waiting for transaction to be included in a block..."
 
-    # With block mode, transaction is already included, query immediately
-    local tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
+    # Poll for transaction confirmation (max 30 seconds)
+    local max_attempts=15
+    local attempt=0
+    local tx_result=""
+
+    while [ $attempt -lt $max_attempts ]; do
+        sleep 2
+        tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
+
+        if echo "$tx_result" | jq empty 2>/dev/null && echo "$tx_result" | jq -e '.height != "0"' >/dev/null 2>&1; then
+            print_success "Transaction confirmed in block"
+            break
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    if [ $attempt -eq $max_attempts ]; then
+        print_error "Transaction confirmation timeout"
+        return 1
+    fi
 
     if ! echo "$tx_result" | jq empty 2>/dev/null; then
         print_error "Failed to query transaction"
@@ -191,7 +211,7 @@ instantiate_contract() {
         --gas-adjustment "$GAS_ADJUSTMENT" \
         --gas-prices "$GAS_PRICES" \
         --no-admin \
-        --broadcast-mode block \
+        --broadcast-mode sync \
         --yes \
         --output json 2>&1)
 
@@ -211,9 +231,29 @@ instantiate_contract() {
     fi
 
     print_info "Transaction hash: $tx_hash"
+    print_info "Waiting for transaction to be included in a block..."
 
-    # With block mode, transaction is already included, query immediately
-    local tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
+    # Poll for transaction confirmation (max 30 seconds)
+    local max_attempts=15
+    local attempt=0
+    local tx_result=""
+
+    while [ $attempt -lt $max_attempts ]; do
+        sleep 2
+        tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
+
+        if echo "$tx_result" | jq empty 2>/dev/null && echo "$tx_result" | jq -e '.height != "0"' >/dev/null 2>&1; then
+            print_success "Transaction confirmed in block"
+            break
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    if [ $attempt -eq $max_attempts ]; then
+        print_error "Transaction confirmation timeout"
+        return 1
+    fi
 
     if ! echo "$tx_result" | jq empty 2>/dev/null; then
         print_error "Failed to query transaction"
