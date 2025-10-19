@@ -18,6 +18,9 @@ pub enum ContractError {
     #[error("Invalid validator: {validator}, expected: {expected}")]
     InvalidValidator { validator: String, expected: String },
 
+    #[error("Invalid validator address: {address}")]
+    InvalidValidatorAddress { address: String },
+
     #[error("Invalid funds: expected {expected} denom")]
     InvalidFunds { expected: String },
 

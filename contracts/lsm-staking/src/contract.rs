@@ -37,8 +37,14 @@ pub fn instantiate(
 
     let owner = deps.api.addr_validate(&msg.owner)?;
 
-    // Validate validator address format
-    deps.api.addr_validate(&msg.validator)?;
+    // Validate validator address format (must start with a validator prefix)
+    if !msg.validator.starts_with("cosmosvaloper")
+        && !msg.validator.starts_with("osmosisvaloper")
+        && !msg.validator.starts_with("neutronvaloper") {
+        return Err(ContractError::InvalidValidatorAddress {
+            address: msg.validator.clone()
+        });
+    }
 
     // Verify that the validator exists on chain
     verify_validator_exists(&deps.querier, &msg.validator)?;
