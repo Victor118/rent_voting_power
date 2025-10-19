@@ -275,17 +275,17 @@ instantiate_contract() {
 
 # Get validator address
 get_validator() {
-    print_info "Querying validators..."
+    print_info "Querying validators..." >&2
 
     local validator=$(gaiad query staking validators --node "$NODE" --output json 2>/dev/null | \
         jq -r '.validators[0].operator_address')
 
     if [ -z "$validator" ] || [ "$validator" == "null" ]; then
-        print_error "No validators found on the network"
-        print_warning "Using default validator address for testing"
+        print_error "No validators found on the network" >&2
+        print_warning "Using default validator address for testing" >&2
         echo "cosmosvaloper1..."
     else
-        print_success "Using validator: $validator"
+        print_success "Using validator: $validator" >&2
         echo "$validator"
     fi
 }
