@@ -1,0 +1,14 @@
+{
+  "name": "staking-contract-codegen",
+  "version": "1.0.0",
+  "description": "TypeScript codegen for LSM Staking contracts",
+  "private": true,
+  "scripts": {
+    "schema": "cd contracts/lsm-staking && cargo run --example schema && cd ../proposal-option-locker && cargo run --example schema",
+    "codegen": "node codegen.js",
+    "generate": "npm run schema && npm run codegen"
+  },
+  "devDependencies": {
+    "@cosmwasm/ts-codegen": "^0.35.0"
+  }
+}
