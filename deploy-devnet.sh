@@ -117,7 +117,7 @@ store_contract() {
     local wasm_file=$1
     local contract_name=$2
 
-    print_info "Storing $contract_name contract..."
+    print_info "Storing $contract_name contract..." >&2
 
     # Execute transaction and capture output
     # Filter out "gas estimate:" line that appears before JSON
@@ -135,7 +135,7 @@ store_contract() {
 
     # Check if output is valid JSON
     if ! echo "$tx_output" | jq empty 2>/dev/null; then
-        print_error "Transaction failed or returned invalid JSON"
+        print_error "Transaction failed or returned invalid JSON" >&2
         echo "Output: $tx_output" >&2
         return 1
     fi
@@ -143,13 +143,13 @@ store_contract() {
     local tx_hash=$(echo "$tx_output" | jq -r '.txhash')
 
     if [ -z "$tx_hash" ] || [ "$tx_hash" == "null" ]; then
-        print_error "Failed to get transaction hash for $contract_name contract"
+        print_error "Failed to get transaction hash for $contract_name contract" >&2
         echo "Output: $tx_output" >&2
         return 1
     fi
 
-    print_info "Transaction hash: $tx_hash"
-    print_info "Waiting for transaction to be included in a block..."
+    print_info "Transaction hash: $tx_hash" >&2
+    print_info "Waiting for transaction to be included in a block..." >&2
 
     # Poll for transaction confirmation (max 30 seconds)
     local max_attempts=15
@@ -161,7 +161,7 @@ store_contract() {
         tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
 
         if echo "$tx_result" | jq empty 2>/dev/null && echo "$tx_result" | jq -e '.height != "0"' >/dev/null 2>&1; then
-            print_success "Transaction confirmed in block"
+            print_success "Transaction confirmed in block" >&2
             break
         fi
 
@@ -169,12 +169,12 @@ store_contract() {
     done
 
     if [ $attempt -eq $max_attempts ]; then
-        print_error "Transaction confirmation timeout"
+        print_error "Transaction confirmation timeout" >&2
         return 1
     fi
 
     if ! echo "$tx_result" | jq empty 2>/dev/null; then
-        print_error "Failed to query transaction"
+        print_error "Failed to query transaction" >&2
         echo "Output: $tx_result" >&2
         return 1
     fi
@@ -182,12 +182,12 @@ store_contract() {
     local code_id=$(echo "$tx_result" | jq -r '.events[] | select(.type=="store_code") | .attributes[] | select(.key=="code_id") | .value' | tr -d '"')
 
     if [ -z "$code_id" ] || [ "$code_id" == "null" ]; then
-        print_error "Failed to get code_id for $contract_name"
+        print_error "Failed to get code_id for $contract_name" >&2
         echo "Transaction result: $tx_result" >&2
         return 1
     fi
 
-    print_success "$contract_name stored with code_id: $code_id"
+    print_success "$contract_name stored with code_id: $code_id" >&2
     echo "$code_id"
 }
 
@@ -198,8 +198,8 @@ instantiate_contract() {
     local label=$3
     local contract_name=$4
 
-    print_info "Instantiating $contract_name contract..."
-    print_info "Init message: $init_msg"
+    print_info "Instantiating $contract_name contract..." >&2
+    print_info "Init message: $init_msg" >&2
 
     # Execute transaction and capture output
     # Filter out "gas estimate:" line that appears before JSON
@@ -219,7 +219,7 @@ instantiate_contract() {
 
     # Check if output is valid JSON
     if ! echo "$tx_output" | jq empty 2>/dev/null; then
-        print_error "Transaction failed or returned invalid JSON"
+        print_error "Transaction failed or returned invalid JSON" >&2
         echo "Output: $tx_output" >&2
         return 1
     fi
@@ -227,13 +227,13 @@ instantiate_contract() {
     local tx_hash=$(echo "$tx_output" | jq -r '.txhash')
 
     if [ -z "$tx_hash" ] || [ "$tx_hash" == "null" ]; then
-        print_error "Failed to get transaction hash for $contract_name"
+        print_error "Failed to get transaction hash for $contract_name" >&2
         echo "Output: $tx_output" >&2
         return 1
     fi
 
-    print_info "Transaction hash: $tx_hash"
-    print_info "Waiting for transaction to be included in a block..."
+    print_info "Transaction hash: $tx_hash" >&2
+    print_info "Waiting for transaction to be included in a block..." >&2
 
     # Poll for transaction confirmation (max 30 seconds)
     local max_attempts=15
@@ -245,7 +245,7 @@ instantiate_contract() {
         tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
 
         if echo "$tx_result" | jq empty 2>/dev/null && echo "$tx_result" | jq -e '.height != "0"' >/dev/null 2>&1; then
-            print_success "Transaction confirmed in block"
+            print_success "Transaction confirmed in block" >&2
             break
         fi
 
@@ -253,12 +253,12 @@ instantiate_contract() {
     done
 
     if [ $attempt -eq $max_attempts ]; then
-        print_error "Transaction confirmation timeout"
+        print_error "Transaction confirmation timeout" >&2
         return 1
     fi
 
     if ! echo "$tx_result" | jq empty 2>/dev/null; then
-        print_error "Failed to query transaction"
+        print_error "Failed to query transaction" >&2
         echo "Output: $tx_result" >&2
         return 1
     fi
@@ -266,12 +266,12 @@ instantiate_contract() {
     local contract_address=$(echo "$tx_result" | jq -r '.events[] | select(.type=="instantiate") | .attributes[] | select(.key=="_contract_address") | .value' | tr -d '"')
 
     if [ -z "$contract_address" ] || [ "$contract_address" == "null" ]; then
-        print_error "Failed to get contract address for $contract_name"
+        print_error "Failed to get contract address for $contract_name" >&2
         echo "Transaction result: $tx_result" >&2
         return 1
     fi
 
-    print_success "$contract_name instantiated at: $contract_address"
+    print_success "$contract_name instantiated at: $contract_address" >&2
     echo "$contract_address"
 }
 
