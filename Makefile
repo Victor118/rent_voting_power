@@ -29,16 +29,17 @@ build: artifacts
 	@echo "Building all contracts..."
 	@cargo build --target wasm32-unknown-unknown --release
 	@echo ""
-	@echo "Optimizing WASM files..."
+	@echo "Copying WASM files to artifacts..."
+	@cp target/wasm32-unknown-unknown/release/lsm_staking.wasm artifacts/
+	@cp target/wasm32-unknown-unknown/release/proposal_option_locker.wasm artifacts/
 	@if command -v wasm-opt &> /dev/null; then \
-		wasm-opt -Oz target/wasm32-unknown-unknown/release/lsm_staking.wasm -o artifacts/lsm_staking.wasm; \
-		wasm-opt -Oz target/wasm32-unknown-unknown/release/proposal_option_locker.wasm -o artifacts/proposal_option_locker.wasm; \
-		echo "✓ Optimized WASM files with wasm-opt"; \
+		echo "Optimizing with wasm-opt..."; \
+		wasm-opt -Oz artifacts/lsm_staking.wasm -o artifacts/lsm_staking.wasm; \
+		wasm-opt -Oz artifacts/proposal_option_locker.wasm -o artifacts/proposal_option_locker.wasm; \
+		echo "✓ WASM files optimized"; \
 	else \
-		cp target/wasm32-unknown-unknown/release/lsm_staking.wasm artifacts/; \
-		cp target/wasm32-unknown-unknown/release/proposal_option_locker.wasm artifacts/; \
 		echo "⚠  wasm-opt not found, using unoptimized WASM"; \
-		echo "   Install binaryen for optimization: apt install binaryen"; \
+		echo "   Install for optimization: apt install binaryen"; \
 	fi
 	@echo ""
 	@echo "✓ WASM files ready in artifacts/"
