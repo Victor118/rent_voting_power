@@ -27,7 +27,8 @@ help:
 # Build & optimize all contracts
 build: artifacts
 	@echo "Building all contracts..."
-	@cargo build --target wasm32-unknown-unknown --release
+	@RUSTFLAGS="-C link-arg=-s -C target-feature=-reference-types" \
+		cargo build --target wasm32-unknown-unknown --release
 	@echo ""
 	@echo "Copying WASM files to artifacts..."
 	@cp target/wasm32-unknown-unknown/release/lsm_staking.wasm artifacts/
