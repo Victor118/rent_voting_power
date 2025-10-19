@@ -119,7 +119,8 @@ store_contract() {
 
     print_info "Storing $contract_name contract..."
 
-    local tx_hash=$(gaiad tx wasm store "$wasm_file" \
+    # Execute transaction and capture output
+    local tx_output=$(gaiad tx wasm store "$wasm_file" \
         --from "$WALLET_NAME" \
         --keyring-backend "$KEYRING_BACKEND" \
         --node "$NODE" \
@@ -129,10 +130,20 @@ store_contract() {
         --gas-prices "$GAS_PRICES" \
         --broadcast-mode sync \
         --yes \
-        --output json 2>&1 | jq -r '.txhash')
+        --output json 2>&1)
+
+    # Check if output is valid JSON
+    if ! echo "$tx_output" | jq empty 2>/dev/null; then
+        print_error "Transaction failed or returned invalid JSON"
+        echo "Output: $tx_output" >&2
+        return 1
+    fi
+
+    local tx_hash=$(echo "$tx_output" | jq -r '.txhash')
 
     if [ -z "$tx_hash" ] || [ "$tx_hash" == "null" ]; then
-        print_error "Failed to store $contract_name contract"
+        print_error "Failed to get transaction hash for $contract_name contract"
+        echo "Output: $tx_output" >&2
         return 1
     fi
 
@@ -141,11 +152,19 @@ store_contract() {
     sleep 6
 
     # Query transaction to get code_id
-    local code_id=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>/dev/null | \
-        jq -r '.events[] | select(.type=="store_code") | .attributes[] | select(.key=="code_id") | .value' | tr -d '"')
+    local tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
+
+    if ! echo "$tx_result" | jq empty 2>/dev/null; then
+        print_error "Failed to query transaction"
+        echo "Output: $tx_result" >&2
+        return 1
+    fi
+
+    local code_id=$(echo "$tx_result" | jq -r '.events[] | select(.type=="store_code") | .attributes[] | select(.key=="code_id") | .value' | tr -d '"')
 
     if [ -z "$code_id" ] || [ "$code_id" == "null" ]; then
         print_error "Failed to get code_id for $contract_name"
+        echo "Transaction result: $tx_result" >&2
         return 1
     fi
 
@@ -163,7 +182,8 @@ instantiate_contract() {
     print_info "Instantiating $contract_name contract..."
     print_info "Init message: $init_msg"
 
-    local tx_hash=$(gaiad tx wasm instantiate "$code_id" "$init_msg" \
+    # Execute transaction and capture output
+    local tx_output=$(gaiad tx wasm instantiate "$code_id" "$init_msg" \
         --from "$WALLET_NAME" \
         --keyring-backend "$KEYRING_BACKEND" \
         --node "$NODE" \
@@ -175,10 +195,20 @@ instantiate_contract() {
         --no-admin \
         --broadcast-mode sync \
         --yes \
-        --output json 2>&1 | jq -r '.txhash')
+        --output json 2>&1)
+
+    # Check if output is valid JSON
+    if ! echo "$tx_output" | jq empty 2>/dev/null; then
+        print_error "Transaction failed or returned invalid JSON"
+        echo "Output: $tx_output" >&2
+        return 1
+    fi
+
+    local tx_hash=$(echo "$tx_output" | jq -r '.txhash')
 
     if [ -z "$tx_hash" ] || [ "$tx_hash" == "null" ]; then
-        print_error "Failed to instantiate $contract_name"
+        print_error "Failed to get transaction hash for $contract_name"
+        echo "Output: $tx_output" >&2
         return 1
     fi
 
@@ -187,11 +217,19 @@ instantiate_contract() {
     sleep 6
 
     # Query transaction to get contract address
-    local contract_address=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>/dev/null | \
-        jq -r '.events[] | select(.type=="instantiate") | .attributes[] | select(.key=="_contract_address") | .value' | tr -d '"')
+    local tx_result=$(gaiad query tx "$tx_hash" --node "$NODE" --output json 2>&1)
+
+    if ! echo "$tx_result" | jq empty 2>/dev/null; then
+        print_error "Failed to query transaction"
+        echo "Output: $tx_result" >&2
+        return 1
+    fi
+
+    local contract_address=$(echo "$tx_result" | jq -r '.events[] | select(.type=="instantiate") | .attributes[] | select(.key=="_contract_address") | .value' | tr -d '"')
 
     if [ -z "$contract_address" ] || [ "$contract_address" == "null" ]; then
         print_error "Failed to get contract address for $contract_name"
+        echo "Transaction result: $tx_result" >&2
         return 1
     fi
 
