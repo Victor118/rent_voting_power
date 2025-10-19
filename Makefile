@@ -1,61 +1,72 @@
-.PHONY: help build build-all optimize optimize-all schema codegen clean test check
+.PHONY: help build build-lsm build-locker schema codegen clean test check deploy-devnet
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  make build              - Build all contracts in debug mode"
-	@echo "  make build-lsm          - Build lsm-staking contract"
-	@echo "  make build-locker       - Build proposal-option-locker contract"
-	@echo "  make optimize           - Build optimized WASM binaries for all contracts"
-	@echo "  make optimize-lsm       - Build optimized WASM for lsm-staking"
-	@echo "  make optimize-locker    - Build optimized WASM for proposal-option-locker"
-	@echo "  make schema             - Generate JSON schemas for all contracts"
+	@echo ""
+	@echo "Build & Deploy:"
+	@echo "  make build              - Build & optimize all contracts (WASM in artifacts/)"
+	@echo "  make build-lsm          - Build & optimize lsm-staking contract only"
+	@echo "  make build-locker       - Build & optimize proposal-option-locker only"
+	@echo "  make deploy-devnet      - Deploy contracts to devnet"
+	@echo ""
+	@echo "Code Generation:"
+	@echo "  make schema             - Generate JSON schemas"
 	@echo "  make codegen            - Generate TypeScript clients"
 	@echo "  make generate           - Generate schemas + TypeScript clients"
+	@echo ""
+	@echo "Development:"
 	@echo "  make test               - Run all tests"
 	@echo "  make check              - Check code without building"
 	@echo "  make clean              - Clean build artifacts"
+	@echo ""
+	@echo "Quick workflow:"
+	@echo "  make build && ./deploy-devnet.sh"
 
-# Build targets
+# Build & optimize all contracts using cosmwasm/optimizer (Docker)
 build:
-	@echo "Building all contracts..."
-	@cargo build --target wasm32-unknown-unknown --release
-
-build-lsm:
-	@echo "Building lsm-staking contract..."
-	@cargo build --package lsm-staking --target wasm32-unknown-unknown --release
-
-build-locker:
-	@echo "Building proposal-option-locker contract..."
-	@cargo build --package proposal-option-locker --target wasm32-unknown-unknown --release
-
-# Optimize WASM binaries using cosmwasm/optimizer
-optimize:
-	@echo "Optimizing all contracts with cosmwasm/optimizer..."
+	@echo "Building and optimizing all contracts with cosmwasm/optimizer..."
 	@if ! command -v docker &> /dev/null; then \
-		echo "Error: Docker is required for optimization"; \
+		echo "Error: Docker is required for building"; \
 		exit 1; \
 	fi
 	@docker run --rm -v "$(PWD)":/code \
 		--mount type=volume,source="$(notdir $(PWD))_cache",target=/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
 		cosmwasm/optimizer:0.16.0
+	@echo "✓ Optimized WASM files available in artifacts/"
+	@ls -lh artifacts/*.wasm 2>/dev/null || true
 
-optimize-lsm:
-	@echo "Optimizing lsm-staking contract..."
+# Build & optimize individual contracts
+build-lsm: artifacts
+	@echo "Building and optimizing lsm-staking contract..."
 	@cargo build --package lsm-staking --target wasm32-unknown-unknown --release
-	@wasm-opt -Oz \
-		target/wasm32-unknown-unknown/release/lsm_staking.wasm \
-		-o artifacts/lsm_staking.wasm
-	@echo "Optimized: artifacts/lsm_staking.wasm"
+	@if command -v wasm-opt &> /dev/null; then \
+		wasm-opt -Oz \
+			target/wasm32-unknown-unknown/release/lsm_staking.wasm \
+			-o artifacts/lsm_staking.wasm; \
+		echo "✓ Optimized: artifacts/lsm_staking.wasm"; \
+		ls -lh artifacts/lsm_staking.wasm; \
+	else \
+		cp target/wasm32-unknown-unknown/release/lsm_staking.wasm artifacts/; \
+		echo "⚠ wasm-opt not found, copied unoptimized WASM"; \
+		echo "  Install binaryen for optimization: apt install binaryen"; \
+	fi
 
-optimize-locker:
-	@echo "Optimizing proposal-option-locker contract..."
+build-locker: artifacts
+	@echo "Building and optimizing proposal-option-locker contract..."
 	@cargo build --package proposal-option-locker --target wasm32-unknown-unknown --release
-	@wasm-opt -Oz \
-		target/wasm32-unknown-unknown/release/proposal_option_locker.wasm \
-		-o artifacts/proposal_option_locker.wasm
-	@echo "Optimized: artifacts/proposal_option_locker.wasm"
+	@if command -v wasm-opt &> /dev/null; then \
+		wasm-opt -Oz \
+			target/wasm32-unknown-unknown/release/proposal_option_locker.wasm \
+			-o artifacts/proposal_option_locker.wasm; \
+		echo "✓ Optimized: artifacts/proposal_option_locker.wasm"; \
+		ls -lh artifacts/proposal_option_locker.wasm; \
+	else \
+		cp target/wasm32-unknown-unknown/release/proposal_option_locker.wasm artifacts/; \
+		echo "⚠ wasm-opt not found, copied unoptimized WASM"; \
+		echo "  Install binaryen for optimization: apt install binaryen"; \
+	fi
 
 # Schema generation
 schema:
@@ -80,11 +91,21 @@ check:
 	@echo "Checking code..."
 	@cargo check
 
+# Deploy to devnet
+deploy-devnet:
+	@if [ ! -f "artifacts/lsm_staking.wasm" ] || [ ! -f "artifacts/proposal_option_locker.wasm" ]; then \
+		echo "Error: WASM files not found in artifacts/"; \
+		echo "Run 'make build' first"; \
+		exit 1; \
+	fi
+	@./deploy-devnet.sh
+
 # Clean
 clean:
 	@echo "Cleaning build artifacts..."
 	@cargo clean
 	@rm -rf artifacts/*.wasm
+	@rm -f deployment-info.json
 	@echo "Clean complete!"
 
 # Setup artifacts directory
