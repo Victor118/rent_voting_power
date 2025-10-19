@@ -5,9 +5,10 @@ help:
 	@echo "Available targets:"
 	@echo ""
 	@echo "Build & Deploy:"
-	@echo "  make build              - Build & optimize all contracts (WASM in artifacts/)"
-	@echo "  make build-lsm          - Build & optimize lsm-staking contract only"
-	@echo "  make build-locker       - Build & optimize proposal-option-locker only"
+	@echo "  make build              - Build all contracts (auto-optimize if wasm-opt available)"
+	@echo "  make build-docker       - Build with Docker optimizer (requires Docker)"
+	@echo "  make build-lsm          - Build lsm-staking contract only"
+	@echo "  make build-locker       - Build proposal-option-locker only"
 	@echo "  make deploy-devnet      - Deploy contracts to devnet"
 	@echo ""
 	@echo "Code Generation:"
@@ -23,11 +24,32 @@ help:
 	@echo "Quick workflow:"
 	@echo "  make build && ./deploy-devnet.sh"
 
-# Build & optimize all contracts using cosmwasm/optimizer (Docker)
-build:
+# Build & optimize all contracts
+build: artifacts
+	@echo "Building all contracts..."
+	@cargo build --target wasm32-unknown-unknown --release
+	@echo ""
+	@echo "Optimizing WASM files..."
+	@if command -v wasm-opt &> /dev/null; then \
+		wasm-opt -Oz target/wasm32-unknown-unknown/release/lsm_staking.wasm -o artifacts/lsm_staking.wasm; \
+		wasm-opt -Oz target/wasm32-unknown-unknown/release/proposal_option_locker.wasm -o artifacts/proposal_option_locker.wasm; \
+		echo "✓ Optimized WASM files with wasm-opt"; \
+	else \
+		cp target/wasm32-unknown-unknown/release/lsm_staking.wasm artifacts/; \
+		cp target/wasm32-unknown-unknown/release/proposal_option_locker.wasm artifacts/; \
+		echo "⚠  wasm-opt not found, using unoptimized WASM"; \
+		echo "   Install binaryen for optimization: apt install binaryen"; \
+	fi
+	@echo ""
+	@echo "✓ WASM files ready in artifacts/"
+	@ls -lh artifacts/*.wasm
+
+# Build with Docker optimizer (optional, if Docker is available)
+build-docker:
 	@echo "Building and optimizing all contracts with cosmwasm/optimizer..."
 	@if ! command -v docker &> /dev/null; then \
-		echo "Error: Docker is required for building"; \
+		echo "Error: Docker is required for this target"; \
+		echo "Use 'make build' instead for non-Docker build"; \
 		exit 1; \
 	fi
 	@docker run --rm -v "$(PWD)":/code \
