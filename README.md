@@ -1,6 +1,18 @@
-# LSM Staking Contract
+# LSM Staking & Voting Power Rental Contracts
 
-A CosmWasm smart contract for managing Liquid Staking Module (LSM) shares from Cosmos Hub (Gaia). This contract allows users to deposit LSM shares, which are then redeemed and staked. It implements a cumulative reward index algorithm for fair reward distribution.
+CosmWasm smart contracts for LSM (Liquid Staking Module) staking and governance voting power rental on Cosmos Hub (Gaia).
+
+## 📋 Quick Start
+
+```bash
+# 1. Build contracts
+make build
+
+# 2. Deploy to devnet
+make deploy-devnet
+```
+
+All dependencies and configuration are included in the repository - no manual setup needed!
 
 ## Features
 
