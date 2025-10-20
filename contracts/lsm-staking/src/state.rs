@@ -23,10 +23,10 @@ pub const IS_PAUSED: Item<bool> = Item::new("is_paused");
 pub struct ActiveClaim {
     /// User who initiated the claim
     pub claimer: Addr,
-    /// User's pending rewards amount
-    pub user_rewards: Uint128,
     /// Contract balance before claiming rewards
     pub balance_before: Uint128,
+    /// Global reward index before claiming
+    pub global_index_before: cosmwasm_std::Decimal256,
 }
 
 pub const ACTIVE_CLAIM: Item<ActiveClaim> = Item::new("active_claim");

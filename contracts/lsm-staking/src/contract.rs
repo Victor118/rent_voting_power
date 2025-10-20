@@ -181,10 +181,10 @@ pub fn execute_deposit_lsm_shares(
 
 /// Claim accumulated rewards
 /// This will:
-/// 1. Calculate user's pending rewards
+/// 1. Verify user has staked tokens
 /// 2. Query current balance
 /// 3. Withdraw rewards from the single validator
-/// 4. In the reply, verify rewards received and distribute to user
+/// 4. In the reply, update global index, calculate user rewards, and distribute to user
 pub fn execute_claim_rewards(
     deps: DepsMut,
     env: Env,
@@ -193,16 +193,10 @@ pub fn execute_claim_rewards(
     let config = CONFIG.load(deps.storage)?;
     let state = STATE.load(deps.storage)?;
 
-    let staker = STAKERS
+    // Verify user has staked tokens (we'll calculate rewards in the reply)
+    let _staker = STAKERS
         .load(deps.storage, &info.sender)
         .map_err(|_| ContractError::NoRewards {})?;
-
-    // Calculate user's pending rewards
-    let user_rewards = staker.calculate_pending_rewards(state.global_reward_index);
-
-    if user_rewards.is_zero() {
-        return Err(ContractError::NoRewards {});
-    }
 
     // Query current balance before claiming
     let balance_query: BalanceResponse = deps.querier.query(
@@ -213,13 +207,13 @@ pub fn execute_claim_rewards(
         .into(),
     )?;
 
-    // Store active claim state
+    // Store active claim state with current global index
     ACTIVE_CLAIM.save(
         deps.storage,
         &ActiveClaim {
             claimer: info.sender.clone(),
-            user_rewards,
             balance_before: balance_query.amount.amount,
+            global_index_before: state.global_reward_index,
         },
     )?;
 
@@ -1260,7 +1254,11 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
 }
 
 /// Reply handler after withdrawing rewards from the validator
-/// This verifies rewards received, updates user state, and sends rewards
+/// This:
+/// 1. Calculates the rewards received from the validator
+/// 2. Updates the global reward index with these rewards
+/// 3. Calculates the user's pending rewards with the new index
+/// 4. Updates user state and sends rewards
 fn reply_claim_rewards(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
     let active_claim = ACTIVE_CLAIM.load(deps.storage)?;
@@ -1275,33 +1273,36 @@ fn reply_claim_rewards(deps: DepsMut, env: Env) -> Result<Response, ContractErro
     )?;
     let balance_after = balance_query.amount.amount;
 
-    // Calculate actual rewards received
+    // Calculate actual rewards received from the validator
     let rewards_received = balance_after.saturating_sub(active_claim.balance_before);
-
-    // Verify we received at least the expected rewards (allow small variance for rounding)
-    let expected_min = active_claim.user_rewards.saturating_sub(Uint128::one());
-    if rewards_received < expected_min {
-        ACTIVE_CLAIM.remove(deps.storage);
-        return Err(ContractError::UnexpectedRewardsAmount {
-            expected: active_claim.user_rewards.to_string(),
-            actual: rewards_received.to_string(),
-        });
-    }
 
     // Update global reward index with the rewards received
     let mut state = STATE.load(deps.storage)?;
     state.add_rewards(rewards_received);
     STATE.save(deps.storage, &state)?;
 
-    // Update staker state - update their reward index
-    let mut staker = STAKERS.load(deps.storage, &active_claim.claimer)?;
+    // NOW calculate the user's pending rewards with the updated global index
+    // This includes both:
+    // 1. Rewards that were pending before (from global_index_before)
+    // 2. Rewards from this claim (from rewards_received)
+    let staker = STAKERS.load(deps.storage, &active_claim.claimer)?;
+    let user_rewards = staker.calculate_pending_rewards(state.global_reward_index);
+
+    // If no rewards after updating, return error
+    if user_rewards.is_zero() {
+        ACTIVE_CLAIM.remove(deps.storage);
+        return Err(ContractError::NoRewards {});
+    }
+
+    // Update staker state - update their reward index to the new global index
+    let mut staker = staker;
     staker.update_index(state.global_reward_index);
     STAKERS.save(deps.storage, &active_claim.claimer, &staker)?;
 
     // Send rewards to user
     let send_msg = CosmosMsg::Bank(BankMsg::Send {
         to_address: active_claim.claimer.to_string(),
-        amount: coins(active_claim.user_rewards.u128(), config.staking_denom),
+        amount: coins(user_rewards.u128(), config.staking_denom),
     });
 
     // Clean up active claim
@@ -1312,7 +1313,7 @@ fn reply_claim_rewards(deps: DepsMut, env: Env) -> Result<Response, ContractErro
         .add_attribute("action", "rewards_claimed")
         .add_attribute("user", active_claim.claimer.to_string())
         .add_attribute("rewards_received", rewards_received.to_string())
-        .add_attribute("user_amount", active_claim.user_rewards.to_string()))
+        .add_attribute("user_amount", user_rewards.to_string()))
 }
 
 /// Reply handler after tokenizing shares for rental
