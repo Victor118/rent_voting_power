@@ -37,15 +37,6 @@ pub fn instantiate(
 
     let owner = deps.api.addr_validate(&msg.owner)?;
 
-    // Validate validator address format (must start with a validator prefix)
-    if !msg.validator.starts_with("cosmosvaloper")
-        && !msg.validator.starts_with("osmosisvaloper")
-        && !msg.validator.starts_with("neutronvaloper") {
-        return Err(ContractError::InvalidValidatorAddress {
-            address: msg.validator.clone()
-        });
-    }
-
     // Verify that the validator exists on chain
     verify_validator_exists(&deps.querier, &msg.validator)?;
 
@@ -306,10 +297,9 @@ pub fn execute_withdraw(
         .map_err(|_| ContractError::InsufficientStakedAmount {})?;
 
     // Query the current delegation to get the actual token amount
-    let delegation_response = deps.querier.query_delegation(
-        env.contract.address.clone(),
-        config.validator.clone(),
-    )?;
+    let delegation_response = deps
+        .querier
+        .query_delegation(env.contract.address.clone(), config.validator.clone())?;
 
     let delegated_tokens = delegation_response
         .map(|d| d.amount.amount)
@@ -327,9 +317,19 @@ pub fn execute_withdraw(
 
         let user_tokens_decimal = delegated_decimal
             .checked_mul(user_shares_decimal)
-            .map_err(|e| ContractError::Std(cosmwasm_std::StdError::generic_err(format!("Decimal multiplication error: {}", e))))?
+            .map_err(|e| {
+                ContractError::Std(cosmwasm_std::StdError::generic_err(format!(
+                    "Decimal multiplication error: {}",
+                    e
+                )))
+            })?
             .checked_div(total_shares_decimal)
-            .map_err(|e| ContractError::Std(cosmwasm_std::StdError::generic_err(format!("Decimal division error: {}", e))))?;
+            .map_err(|e| {
+                ContractError::Std(cosmwasm_std::StdError::generic_err(format!(
+                    "Decimal division error: {}",
+                    e
+                )))
+            })?;
 
         // Convert back to Uint128, rounding down
         user_tokens_decimal
@@ -337,7 +337,11 @@ pub fn execute_withdraw(
             .checked_div(cosmwasm_std::Uint256::from(1_000_000_000_000_000_000u128))
             .map_err(|e| ContractError::Std(e.into()))?
             .try_into()
-            .map_err(|_| ContractError::Std(cosmwasm_std::StdError::generic_err("Overflow converting to Uint128")))?
+            .map_err(|_| {
+                ContractError::Std(cosmwasm_std::StdError::generic_err(
+                    "Overflow converting to Uint128",
+                ))
+            })?
     };
 
     // Check if user has enough tokens available
@@ -357,28 +361,44 @@ pub fn execute_withdraw(
 
         let shares_decimal = amount_decimal
             .checked_mul(total_shares_decimal)
-            .map_err(|e| ContractError::Std(cosmwasm_std::StdError::generic_err(format!("Decimal multiplication error: {}", e))))?
+            .map_err(|e| {
+                ContractError::Std(cosmwasm_std::StdError::generic_err(format!(
+                    "Decimal multiplication error: {}",
+                    e
+                )))
+            })?
             .checked_div(delegated_decimal)
-            .map_err(|e| ContractError::Std(cosmwasm_std::StdError::generic_err(format!("Decimal division error: {}", e))))?;
+            .map_err(|e| {
+                ContractError::Std(cosmwasm_std::StdError::generic_err(format!(
+                    "Decimal division error: {}",
+                    e
+                )))
+            })?;
 
         // Convert back to Uint128, rounding up to ensure we deduct enough shares
         let shares_atomics = shares_decimal.atomics();
         let divisor = cosmwasm_std::Uint256::from(1_000_000_000_000_000_000u128);
-        let quotient = shares_atomics.checked_div(divisor)
+        let quotient = shares_atomics
+            .checked_div(divisor)
             .map_err(|e| ContractError::Std(e.into()))?;
-        let remainder = shares_atomics.checked_rem(divisor)
+        let remainder = shares_atomics
+            .checked_rem(divisor)
             .map_err(|e| ContractError::Std(e.into()))?;
 
         // Round up if there's a remainder
         let shares_u256 = if remainder.is_zero() {
             quotient
         } else {
-            quotient.checked_add(cosmwasm_std::Uint256::from(1u128))
+            quotient
+                .checked_add(cosmwasm_std::Uint256::from(1u128))
                 .map_err(|e| ContractError::Std(e.into()))?
         };
 
-        shares_u256.try_into()
-            .map_err(|_| ContractError::Std(cosmwasm_std::StdError::generic_err("Overflow converting to Uint128")))?
+        shares_u256.try_into().map_err(|_| {
+            ContractError::Std(cosmwasm_std::StdError::generic_err(
+                "Overflow converting to Uint128",
+            ))
+        })?
     };
 
     // Calculate pending rewards BEFORE changing staked amount
@@ -756,10 +776,9 @@ pub fn execute_rent_voting_power(
 
     // Query the delegation to get our shares and calculate available tokens
     // We need to account for the shares→tokens ratio which can be < 1 if validator was slashed
-    let delegation_response = deps.querier.query_delegation(
-        env.contract.address.clone(),
-        config.validator.clone(),
-    )?;
+    let delegation_response = deps
+        .querier
+        .query_delegation(env.contract.address.clone(), config.validator.clone())?;
 
     // The delegation response already contains the token amount (not shares)
     // This is because CosmWasm's query_delegation returns the Coin amount which represents tokens
