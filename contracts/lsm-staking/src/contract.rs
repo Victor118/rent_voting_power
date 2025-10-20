@@ -832,15 +832,56 @@ pub fn execute_rent_voting_power(
 }
 
 #[entry_point]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
-        QueryMsg::StakerInfo { address } => to_json_binary(&query_staker_info(deps, address)?),
+        QueryMsg::StakerInfo { address } => to_json_binary(&query_staker_info(deps, env.clone(), address)?),
         QueryMsg::TotalStaked {} => to_json_binary(&query_total_staked(deps)?),
         QueryMsg::RewardIndex {} => to_json_binary(&query_reward_index(deps)?),
         QueryMsg::Stakers { start_after, limit } => {
-            to_json_binary(&query_stakers(deps, start_after, limit)?)
+            to_json_binary(&query_stakers(deps, env, start_after, limit)?)
         }
+    }
+}
+
+/// Calculate the simulated global reward index by querying pending staking rewards
+/// This is used in queries to show accurate pending rewards without modifying state
+fn calculate_simulated_global_index(
+    deps: Deps,
+    env: &Env,
+    state: &State,
+    config: &Config,
+) -> StdResult<cosmwasm_std::Decimal256> {
+    if state.total_staked.is_zero() {
+        return Ok(state.global_reward_index);
+    }
+
+    // Query pending staking rewards from the validator
+    let pending_rewards = deps
+        .querier
+        .query_delegation(env.contract.address.clone(), config.validator.clone())?
+        .and_then(|delegation| delegation.accumulated_rewards)
+        .and_then(|rewards| {
+            rewards
+                .iter()
+                .find(|coin| coin.denom == config.staking_denom)
+                .map(|coin| coin.amount)
+        })
+        .unwrap_or(Uint128::zero());
+
+    // If there are pending rewards, calculate the simulated global index
+    if !pending_rewards.is_zero() {
+        let reward_per_token = cosmwasm_std::Decimal256::from_ratio(
+            cosmwasm_std::Uint256::from(pending_rewards),
+            cosmwasm_std::Uint256::from(state.total_staked),
+        );
+
+        state
+            .global_reward_index
+            .checked_add(reward_per_token)
+            .or(Ok(state.global_reward_index))
+    } else {
+        Ok(state.global_reward_index)
     }
 }
 
@@ -861,12 +902,18 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     })
 }
 
-fn query_staker_info(deps: Deps, address: String) -> StdResult<StakerInfoResponse> {
+fn query_staker_info(deps: Deps, env: Env, address: String) -> StdResult<StakerInfoResponse> {
     let addr = deps.api.addr_validate(&address)?;
     let state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
 
     let staker = STAKERS.load(deps.storage, &addr)?;
-    let pending_rewards = staker.calculate_pending_rewards(state.global_reward_index);
+
+    // Calculate simulated global index including pending staking rewards
+    let simulated_global_index = calculate_simulated_global_index(deps, &env, &state, &config)?;
+
+    // Calculate pending rewards using the simulated index
+    let pending_rewards = staker.calculate_pending_rewards(simulated_global_index);
 
     Ok(StakerInfoResponse {
         address: addr,
@@ -892,11 +939,16 @@ fn query_reward_index(deps: Deps) -> StdResult<RewardIndexResponse> {
 
 fn query_stakers(
     deps: Deps,
+    env: Env,
     start_after: Option<String>,
     limit: Option<u32>,
 ) -> StdResult<StakersResponse> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     let state = STATE.load(deps.storage)?;
+    let config = CONFIG.load(deps.storage)?;
+
+    // Calculate simulated global index including pending staking rewards
+    let simulated_global_index = calculate_simulated_global_index(deps, &env, &state, &config)?;
 
     let stakers: Vec<StakerInfoResponse> = if let Some(s) = start_after {
         let addr = deps.api.addr_validate(&s)?;
@@ -910,7 +962,7 @@ fn query_stakers(
             .take(limit)
             .map(|item| {
                 let (addr, staker) = item?;
-                let pending_rewards = staker.calculate_pending_rewards(state.global_reward_index);
+                let pending_rewards = staker.calculate_pending_rewards(simulated_global_index);
 
                 Ok(StakerInfoResponse {
                     address: addr,
@@ -926,7 +978,7 @@ fn query_stakers(
             .take(limit)
             .map(|item| {
                 let (addr, staker) = item?;
-                let pending_rewards = staker.calculate_pending_rewards(state.global_reward_index);
+                let pending_rewards = staker.calculate_pending_rewards(simulated_global_index);
 
                 Ok(StakerInfoResponse {
                     address: addr,
