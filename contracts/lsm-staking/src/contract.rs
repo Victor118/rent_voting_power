@@ -835,7 +835,9 @@ pub fn execute_rent_voting_power(
 pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_json_binary(&query_config(deps)?),
-        QueryMsg::StakerInfo { address } => to_json_binary(&query_staker_info(deps, env.clone(), address)?),
+        QueryMsg::StakerInfo { address } => {
+            to_json_binary(&query_staker_info(deps, env.clone(), address)?)
+        }
         QueryMsg::TotalStaked {} => to_json_binary(&query_total_staked(deps)?),
         QueryMsg::RewardIndex {} => to_json_binary(&query_reward_index(deps)?),
         QueryMsg::Stakers { start_after, limit } => {
@@ -860,7 +862,7 @@ fn calculate_simulated_global_index(
     let pending_rewards = deps
         .querier
         .query_delegation(env.contract.address.clone(), config.validator.clone())?
-        .and_then(|delegation| delegation.accumulated_rewards)
+        .and_then(|delegation| Some(delegation.accumulated_rewards))
         .and_then(|rewards| {
             rewards
                 .iter()
