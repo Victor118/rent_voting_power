@@ -41,3 +41,14 @@ pub struct ActiveRental {
 }
 
 pub const ACTIVE_RENTAL: Item<ActiveRental> = Item::new("active_rental");
+
+/// Temporary state for active withdrawal
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ActiveWithdraw {
+    /// User who initiated the withdrawal
+    pub withdrawer: Addr,
+    /// Amount of tokens being withdrawn
+    pub amount: Uint128,
+}
+
+pub const ACTIVE_WITHDRAW: Item<ActiveWithdraw> = Item::new("active_withdraw");

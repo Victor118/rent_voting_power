@@ -12,8 +12,8 @@ use lsm_types::{
 
 use crate::error::ContractError;
 use crate::state::{
-    ActiveClaim, ActiveRental, ACTIVE_CLAIM, ACTIVE_RENTAL, CONFIG, IS_PAUSED, STAKERS, STATE,
-    VOTING_SESSIONS,
+    ActiveClaim, ActiveRental, ActiveWithdraw, ACTIVE_CLAIM, ACTIVE_RENTAL, ACTIVE_WITHDRAW,
+    CONFIG, IS_PAUSED, STAKERS, STATE, VOTING_SESSIONS,
 };
 
 const CONTRACT_NAME: &str = "crates.io:lsm-staking";
@@ -25,6 +25,7 @@ const DEFAULT_LIMIT: u32 = 10;
 // Reply IDs
 const REPLY_CLAIM_REWARDS: u64 = 1;
 const REPLY_TOKENIZE_SHARES_RENTAL: u64 = 2;
+const REPLY_TOKENIZE_SHARES_WITHDRAW: u64 = 3;
 
 #[entry_point]
 pub fn instantiate(
@@ -424,17 +425,30 @@ pub fn execute_withdraw(
         response = response.add_attribute("rewards_claimed", user_rewards);
     }
 
-    // Create unstake message using the configured validator
-    let unstake_msg = CosmosMsg::Staking(StakingMsg::Undelegate {
-        validator: config.validator,
-        amount: Coin {
-            denom: config.staking_denom,
+    // Store active withdraw info for the reply handler
+    ACTIVE_WITHDRAW.save(
+        deps.storage,
+        &ActiveWithdraw {
+            withdrawer: info.sender.clone(),
             amount,
         },
-    });
-    messages.push(unstake_msg);
+    )?;
 
-    Ok(response.add_messages(messages))
+    // Create tokenize shares message to convert delegation to LSM shares
+    // The reply handler will send the LSM shares to the user
+    let tokenize_msg = create_tokenize_shares_msg(
+        env.contract.address.to_string(),
+        config.validator,
+        amount,
+        env.contract.address.to_string(), // Send to self first, then forward in reply
+    )?;
+
+    Ok(response
+        .add_messages(messages)
+        .add_submessage(SubMsg::reply_on_success(
+            tokenize_msg,
+            REPLY_TOKENIZE_SHARES_WITHDRAW,
+        )))
 }
 
 /// Update contract configuration (owner only)
@@ -1247,6 +1261,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
     match msg.id {
         REPLY_CLAIM_REWARDS => reply_claim_rewards(deps, env),
         REPLY_TOKENIZE_SHARES_RENTAL => reply_tokenize_shares_rental(deps, env),
+        REPLY_TOKENIZE_SHARES_WITHDRAW => reply_tokenize_shares_withdraw(deps, env),
         _ => Err(ContractError::InvalidLsmShares {
             reason: format!("Unknown reply ID: {}", msg.id),
         }),
@@ -1382,6 +1397,52 @@ fn reply_tokenize_shares_rental(deps: DepsMut, env: Env) -> Result<Response, Con
         .add_attribute("proposal_id", active_rental.proposal_id.to_string())
         .add_attribute("vote_option", active_rental.vote_option.to_string())
         .add_attribute("locker", locker_addr)
+        .add_attribute("lsm_denom", &lsm_share.denom)
+        .add_attribute("amount", lsm_share.amount))
+}
+
+/// Reply handler after tokenizing shares for withdrawal
+/// This sends the LSM shares directly to the user
+fn reply_tokenize_shares_withdraw(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    let active_withdraw = ACTIVE_WITHDRAW.load(deps.storage)?;
+
+    // Query all token balances to find the LSM share
+    // LSM shares have format: {validator}/{record_id}
+    use cosmwasm_std::{AllBalanceResponse, BankQuery, QueryRequest};
+    let all_balances_response: AllBalanceResponse =
+        deps.querier
+            .query(&QueryRequest::Bank(BankQuery::AllBalances {
+                address: env.contract.address.to_string(),
+            }))?;
+    let all_balances = all_balances_response.amount;
+
+    // Find the LSM share token for our specific validator
+    // The denom should start with the validator address followed by '/'
+    let expected_prefix = format!("{}/", config.validator);
+    let lsm_share = all_balances
+        .iter()
+        .find(|coin| coin.denom.starts_with(&expected_prefix))
+        .ok_or(ContractError::InvalidLsmShares {
+            reason: format!(
+                "No LSM share found for validator {} after tokenization",
+                config.validator
+            ),
+        })?;
+
+    // Send the LSM shares directly to the withdrawer
+    let send_msg = CosmosMsg::Bank(BankMsg::Send {
+        to_address: active_withdraw.withdrawer.to_string(),
+        amount: vec![lsm_share.clone()],
+    });
+
+    // Clean up active withdraw
+    ACTIVE_WITHDRAW.remove(deps.storage);
+
+    Ok(Response::new()
+        .add_message(send_msg)
+        .add_attribute("action", "tokenize_shares_withdraw_reply")
+        .add_attribute("withdrawer", active_withdraw.withdrawer)
         .add_attribute("lsm_denom", &lsm_share.denom)
         .add_attribute("amount", lsm_share.amount))
 }
