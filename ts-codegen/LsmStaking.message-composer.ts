@@ -16,11 +16,9 @@ export interface LsmStakingMsg {
   claimRewards: (_funds?: Coin[]) => MsgExecuteContractEncodeObject;
   depositRewards: (_funds?: Coin[]) => MsgExecuteContractEncodeObject;
   withdraw: ({
-    amount,
-    validator
+    amount
   }: {
     amount: Uint128;
-    validator: string;
   }, _funds?: Coin[]) => MsgExecuteContractEncodeObject;
   updateConfig: ({
     maxCap,
@@ -112,11 +110,9 @@ export class LsmStakingMsgComposer implements LsmStakingMsg {
     };
   };
   withdraw = ({
-    amount,
-    validator
+    amount
   }: {
     amount: Uint128;
-    validator: string;
   }, _funds?: Coin[]): MsgExecuteContractEncodeObject => {
     return {
       typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
@@ -125,8 +121,7 @@ export class LsmStakingMsgComposer implements LsmStakingMsg {
         contract: this.contractAddress,
         msg: toUtf8(JSON.stringify({
           withdraw: {
-            amount,
-            validator
+            amount
           }
         })),
         funds: _funds

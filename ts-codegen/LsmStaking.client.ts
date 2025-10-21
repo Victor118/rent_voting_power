@@ -87,11 +87,9 @@ export interface LsmStakingInterface extends LsmStakingReadOnlyInterface {
   claimRewards: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   depositRewards: (fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   withdraw: ({
-    amount,
-    validator
+    amount
   }: {
     amount: Uint128;
-    validator: string;
   }, fee?: number | StdFee | "auto", memo?: string, _funds?: Coin[]) => Promise<ExecuteResult>;
   updateConfig: ({
     maxCap,
@@ -162,16 +160,13 @@ export class LsmStakingClient extends LsmStakingQueryClient implements LsmStakin
     }, fee, memo, _funds);
   };
   withdraw = async ({
-    amount,
-    validator
+    amount
   }: {
     amount: Uint128;
-    validator: string;
   }, fee: number | StdFee | "auto" = "auto", memo?: string, _funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
       withdraw: {
-        amount,
-        validator
+        amount
       }
     }, fee, memo, _funds);
   };

@@ -28,9 +28,9 @@ pub enum ExecuteMsg {
     /// This increases the reward pool
     DepositRewards {},
 
-    /// Withdraw staked tokens (unstake from validators)
-    /// This initiates the unbonding period
-    Withdraw { amount: Uint128, validator: String },
+    /// Withdraw staked tokens
+    /// Tokenizes shares and returns LSM shares to the user
+    Withdraw { amount: Uint128 },
 
     /// Update contract configuration (owner only)
     UpdateConfig {

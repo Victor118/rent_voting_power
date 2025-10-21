@@ -70,9 +70,7 @@ pub fn execute(
         ExecuteMsg::DepositLsmShares {} => execute_deposit_lsm_shares(deps, env, info),
         ExecuteMsg::ClaimRewards {} => execute_claim_rewards(deps, env, info),
         ExecuteMsg::DepositRewards {} => execute_deposit_rewards(deps, info),
-        ExecuteMsg::Withdraw { amount, validator } => {
-            execute_withdraw(deps, env, info, amount, validator)
-        }
+        ExecuteMsg::Withdraw { amount } => execute_withdraw(deps, env, info, amount),
         ExecuteMsg::UpdateConfig { owner, max_cap } => {
             execute_update_config(deps, info, owner, max_cap)
         }
@@ -265,15 +263,16 @@ pub fn execute_deposit_rewards(
         .add_attribute("amount", reward.amount))
 }
 
-/// Withdraw staked tokens (initiate unstaking)
-/// This will automatically claim any pending rewards before unstaking
-/// The validator is automatically set to the configured validator
+/// Withdraw staked tokens
+/// This will:
+/// 1. Automatically claim any pending rewards before withdrawing
+/// 2. Tokenize the delegation into LSM shares
+/// 3. Send the LSM shares to the user
 pub fn execute_withdraw(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
     amount: Uint128,
-    _validator: String,
 ) -> Result<Response, ContractError> {
     // Check if contract is paused
     let is_paused = IS_PAUSED.load(deps.storage)?;

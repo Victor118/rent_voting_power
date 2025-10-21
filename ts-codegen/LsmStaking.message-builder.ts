@@ -23,15 +23,13 @@ export abstract class LsmStakingExecuteMsgBuilder {
     };
   };
   static withdraw = ({
-    amount,
-    validator
+    amount
   }: CamelCasedProperties<Extract<ExecuteMsg, {
     withdraw: unknown;
   }>["withdraw"]>): ExecuteMsg => {
     return {
       withdraw: ({
-        amount,
-        validator
+        amount
       } as const)
     };
   };

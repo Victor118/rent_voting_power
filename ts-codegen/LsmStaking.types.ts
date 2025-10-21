@@ -21,7 +21,6 @@ export type ExecuteMsg = {
 } | {
   withdraw: {
     amount: Uint128;
-    validator: string;
   };
 } | {
   update_config: {
