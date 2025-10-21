@@ -215,6 +215,7 @@ pub fn execute_claim_rewards(
             claimer: info.sender.clone(),
             balance_before: balance_query.amount.amount,
             global_index_before: state.global_reward_index,
+            withdraw_amount: None, // This is just a claim, not a withdraw
         },
     )?;
 
@@ -396,59 +397,54 @@ pub fn execute_withdraw(
         })?
     };
 
-    // Calculate pending rewards BEFORE changing staked amount
-    let user_rewards = staker.calculate_pending_rewards(state.global_reward_index);
-
-    // Update staker and state
+    // Update staker and state BEFORE claiming rewards
+    // We need to do this first so the state is correct when we claim
     staker.staked_amount = staker.staked_amount.saturating_sub(shares_to_deduct);
-    staker.update_index(state.global_reward_index);
     state.total_staked = state.total_staked.saturating_sub(shares_to_deduct);
 
     STAKERS.save(deps.storage, &info.sender, &staker)?;
     STATE.save(deps.storage, &state)?;
 
-    let mut messages = vec![];
-    let mut response = Response::new()
+    // Query current balance before claiming rewards
+    let balance_query: BalanceResponse = deps.querier.query(
+        &BankQuery::Balance {
+            address: env.contract.address.to_string(),
+            denom: config.staking_denom.clone(),
+        }
+        .into(),
+    )?;
+
+    // Store active claim state with withdraw info
+    // The reply will handle:
+    // 1. Update global reward index
+    // 2. Calculate and send user rewards
+    // 3. Tokenize shares and send LSM shares to user
+    ACTIVE_CLAIM.save(
+        deps.storage,
+        &ActiveClaim {
+            claimer: info.sender.clone(),
+            balance_before: balance_query.amount.amount,
+            global_index_before: state.global_reward_index,
+            withdraw_amount: Some(amount), // This is a withdraw with tokenize
+        },
+    )?;
+
+    // First, withdraw delegation rewards
+    // The reply handler will then tokenize shares
+    let withdraw_rewards_msg = SubMsg::reply_on_success(
+        CosmosMsg::Distribution(DistributionMsg::WithdrawDelegatorReward {
+            validator: config.validator.clone(),
+        }),
+        REPLY_CLAIM_REWARDS,
+    );
+
+    Ok(Response::new()
+        .add_submessage(withdraw_rewards_msg)
         .add_attribute("method", "withdraw")
         .add_attribute("sender", info.sender.to_string())
         .add_attribute("amount", amount)
         .add_attribute("shares_deducted", shares_to_deduct)
-        .add_attribute("validator", config.validator.clone());
-
-    // If user has rewards, send them
-    if !user_rewards.is_zero() {
-        let send_rewards_msg = CosmosMsg::Bank(BankMsg::Send {
-            to_address: info.sender.to_string(),
-            amount: coins(user_rewards.u128(), config.staking_denom.clone()),
-        });
-        messages.push(send_rewards_msg);
-        response = response.add_attribute("rewards_claimed", user_rewards);
-    }
-
-    // Store active withdraw info for the reply handler
-    ACTIVE_WITHDRAW.save(
-        deps.storage,
-        &ActiveWithdraw {
-            withdrawer: info.sender.clone(),
-            amount,
-        },
-    )?;
-
-    // Create tokenize shares message to convert delegation to LSM shares
-    // The reply handler will send the LSM shares to the user
-    let tokenize_msg = create_tokenize_shares_msg(
-        env.contract.address.to_string(),
-        config.validator,
-        amount,
-        env.contract.address.to_string(), // Send to self first, then forward in reply
-    )?;
-
-    Ok(response
-        .add_messages(messages)
-        .add_submessage(SubMsg::reply_on_success(
-            tokenize_msg,
-            REPLY_TOKENIZE_SHARES_WITHDRAW,
-        )))
+        .add_attribute("validator", config.validator))
 }
 
 /// Update contract configuration (owner only)
@@ -1274,6 +1270,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
 /// 2. Updates the global reward index with these rewards
 /// 3. Calculates the user's pending rewards with the new index
 /// 4. Updates user state and sends rewards
+/// 5. If this is a withdraw (not just a claim), also tokenizes shares
 fn reply_claim_rewards(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
     let active_claim = ACTIVE_CLAIM.load(deps.storage)?;
@@ -1300,35 +1297,60 @@ fn reply_claim_rewards(deps: DepsMut, env: Env) -> Result<Response, ContractErro
     // This includes both:
     // 1. Rewards that were pending before (from global_index_before)
     // 2. Rewards from this claim (from rewards_received)
-    let staker = STAKERS.load(deps.storage, &active_claim.claimer)?;
+    let mut staker = STAKERS.load(deps.storage, &active_claim.claimer)?;
     let user_rewards = staker.calculate_pending_rewards(state.global_reward_index);
 
-    // If no rewards after updating, return error
-    if user_rewards.is_zero() {
-        ACTIVE_CLAIM.remove(deps.storage);
-        return Err(ContractError::NoRewards {});
-    }
-
     // Update staker state - update their reward index to the new global index
-    let mut staker = staker;
     staker.update_index(state.global_reward_index);
     STAKERS.save(deps.storage, &active_claim.claimer, &staker)?;
 
-    // Send rewards to user
-    let send_msg = CosmosMsg::Bank(BankMsg::Send {
-        to_address: active_claim.claimer.to_string(),
-        amount: coins(user_rewards.u128(), config.staking_denom),
-    });
+    let mut messages = vec![];
+    let mut response = Response::new()
+        .add_attribute("action", "rewards_claimed")
+        .add_attribute("user", active_claim.claimer.to_string())
+        .add_attribute("rewards_received", rewards_received.to_string())
+        .add_attribute("user_amount", user_rewards.to_string());
+
+    // Send rewards to user if they have any
+    if !user_rewards.is_zero() {
+        let send_msg = CosmosMsg::Bank(BankMsg::Send {
+            to_address: active_claim.claimer.to_string(),
+            amount: coins(user_rewards.u128(), config.staking_denom.clone()),
+        });
+        messages.push(send_msg);
+    }
+
+    // Check if this is part of a withdraw operation
+    if let Some(withdraw_amount) = active_claim.withdraw_amount {
+        // Store active withdraw info for the tokenize reply handler
+        ACTIVE_WITHDRAW.save(
+            deps.storage,
+            &ActiveWithdraw {
+                withdrawer: active_claim.claimer.clone(),
+                amount: withdraw_amount,
+            },
+        )?;
+
+        // Create tokenize shares message to convert delegation to LSM shares
+        let tokenize_msg = create_tokenize_shares_msg(
+            env.contract.address.to_string(),
+            config.validator,
+            withdraw_amount,
+            env.contract.address.to_string(), // Send to self first, then forward in reply
+        )?;
+
+        response = response
+            .add_submessage(SubMsg::reply_on_success(
+                tokenize_msg,
+                REPLY_TOKENIZE_SHARES_WITHDRAW,
+            ))
+            .add_attribute("withdraw_amount", withdraw_amount);
+    }
 
     // Clean up active claim
     ACTIVE_CLAIM.remove(deps.storage);
 
-    Ok(Response::new()
-        .add_message(send_msg)
-        .add_attribute("action", "rewards_claimed")
-        .add_attribute("user", active_claim.claimer.to_string())
-        .add_attribute("rewards_received", rewards_received.to_string())
-        .add_attribute("user_amount", user_rewards.to_string()))
+    Ok(response.add_messages(messages))
 }
 
 /// Reply handler after tokenizing shares for rental

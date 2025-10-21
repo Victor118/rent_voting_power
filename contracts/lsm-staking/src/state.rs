@@ -27,6 +27,8 @@ pub struct ActiveClaim {
     pub balance_before: Uint128,
     /// Global reward index before claiming
     pub global_index_before: cosmwasm_std::Decimal256,
+    /// If this is part of a withdrawal (Some(amount)) or just a claim (None)
+    pub withdraw_amount: Option<Uint128>,
 }
 
 pub const ACTIVE_CLAIM: Item<ActiveClaim> = Item::new("active_claim");
