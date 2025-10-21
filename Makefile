@@ -62,7 +62,7 @@ build-docker:
 	@docker run --rm -v "$(PWD)":/code \
 		--mount type=volume,source="$(notdir $(PWD))_cache",target=/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-		cosmwasm/optimizer:0.16.0
+		cosmwasm/optimizer:0.16.1
 	@echo "✓ Optimized WASM files available in artifacts/"
 	@ls -lh artifacts/*.wasm 2>/dev/null || true
 

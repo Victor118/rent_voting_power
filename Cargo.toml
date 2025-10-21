@@ -20,6 +20,8 @@ thiserror = "1.0.69"
 # Workaround for cosmwasm-crypto incompatibility with ed25519-zebra 4.1.0
 # by forcing an older compatible version
 ed25519-zebra = "=4.0.3"
+# Force older base64ct compatible with Rust 1.78 (cosmwasm/optimizer)
+base64ct = "=1.6.0"
 
 [profile.release]
 opt-level = 3

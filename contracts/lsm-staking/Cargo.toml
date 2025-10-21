@@ -25,6 +25,8 @@ proposal-locker-types = { path = "../../packages/proposal-locker-types" }
 prost = "0.13"
 # Force compatible version of ed25519-zebra for cosmwasm-crypto 2.2.2
 ed25519-zebra = "=4.0.3"
+# Force older base64ct compatible with Rust 1.81 (cosmwasm/optimizer:0.16.1)
+base64ct = "=1.6.0"
 
 [dev-dependencies]
 cosmwasm-std = { workspace = true, features = ["stargate"] }
