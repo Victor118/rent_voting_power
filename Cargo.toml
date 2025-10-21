@@ -17,6 +17,10 @@ schemars = "0.8.21"
 serde = { version = "1.0.214", default-features = false, features = ["derive"] }
 thiserror = "1.0.69"
 
+# Workaround for cosmwasm-crypto incompatibility with ed25519-zebra 4.1.0
+# by forcing an older compatible version
+ed25519-zebra = "=4.0.3"
+
 [profile.release]
 opt-level = 3
 debug = false

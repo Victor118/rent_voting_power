@@ -23,6 +23,8 @@ thiserror = { workspace = true }
 lsm-types = { path = "../../packages/lsm-types" }
 proposal-locker-types = { path = "../../packages/proposal-locker-types" }
 prost = "0.13"
+# Force compatible version of ed25519-zebra for cosmwasm-crypto 2.2.2
+ed25519-zebra = "=4.0.3"
 
 [dev-dependencies]
 cosmwasm-std = { workspace = true, features = ["stargate"] }
