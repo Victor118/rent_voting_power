@@ -152,14 +152,11 @@ pub fn execute_deposit_lsm_shares(
         }
     }
 
-    // Query current balance before claiming rewards
-    let balance_query: BalanceResponse = deps.querier.query(
-        &BankQuery::Balance {
-            address: env.contract.address.to_string(),
-            denom: config.staking_denom.clone(),
-        }
-        .into(),
-    )?;
+    // Check if delegation exists (to know if we should claim rewards first)
+    let delegation_exists = deps
+        .querier
+        .query_delegation(env.contract.address.clone(), config.validator.clone())?
+        .is_some();
 
     // Store active deposit info for the reply handlers
     ACTIVE_DEPOSIT.save(
@@ -171,33 +168,83 @@ pub fn execute_deposit_lsm_shares(
         },
     )?;
 
-    // Store active claim state for reward distribution
-    ACTIVE_CLAIM.save(
-        deps.storage,
-        &ActiveClaim {
-            claimer: info.sender.clone(),
-            balance_before: balance_query.amount.amount,
-            global_index_before: state.global_reward_index,
-            withdraw_amount: None, // This is a deposit, not a withdraw
-        },
-    )?;
+    if delegation_exists {
+        // Query current balance before claiming rewards
+        let balance_query: BalanceResponse = deps.querier.query(
+            &BankQuery::Balance {
+                address: env.contract.address.to_string(),
+                denom: config.staking_denom.clone(),
+            }
+            .into(),
+        )?;
 
-    // First, withdraw delegation rewards to update the global index
-    // The reply handler will then update state and redeem the LSM shares
-    let withdraw_rewards_msg = SubMsg::reply_on_success(
-        CosmosMsg::Distribution(DistributionMsg::WithdrawDelegatorReward {
-            validator: config.validator.clone(),
-        }),
-        REPLY_CLAIM_REWARDS_DEPOSIT,
-    );
+        // Store active claim state for reward distribution
+        ACTIVE_CLAIM.save(
+            deps.storage,
+            &ActiveClaim {
+                claimer: info.sender.clone(),
+                balance_before: balance_query.amount.amount,
+                global_index_before: state.global_reward_index,
+                withdraw_amount: None, // This is a deposit, not a withdraw
+            },
+        )?;
 
-    Ok(Response::new()
-        .add_submessage(withdraw_rewards_msg)
-        .add_attribute("method", "deposit_lsm_shares")
-        .add_attribute("sender", info.sender)
-        .add_attribute("validator", lsm_info.validator)
-        .add_attribute("record_id", lsm_info.record_id)
-        .add_attribute("amount", lsm_share.amount))
+        // First, withdraw delegation rewards to update the global index
+        // The reply handler will then update state and redeem the LSM shares
+        let withdraw_rewards_msg = SubMsg::reply_on_success(
+            CosmosMsg::Distribution(DistributionMsg::WithdrawDelegatorReward {
+                validator: config.validator.clone(),
+            }),
+            REPLY_CLAIM_REWARDS_DEPOSIT,
+        );
+
+        Ok(Response::new()
+            .add_submessage(withdraw_rewards_msg)
+            .add_attribute("method", "deposit_lsm_shares")
+            .add_attribute("sender", info.sender)
+            .add_attribute("validator", lsm_info.validator)
+            .add_attribute("record_id", lsm_info.record_id)
+            .add_attribute("amount", lsm_share.amount))
+    } else {
+        // This is the first deposit - no delegation exists yet, so skip reward claiming
+        // Load or create staker
+        let mut staker = STAKERS
+            .may_load(deps.storage, &info.sender)?
+            .unwrap_or_else(Staker::new);
+
+        // Add the new deposit to state and staker
+        let mut state = STATE.load(deps.storage)?;
+        state.total_staked += lsm_share.amount;
+        staker.staked_amount += lsm_share.amount;
+
+        // Set staker's reward index to the current global index
+        staker.update_index(state.global_reward_index);
+
+        STAKERS.save(deps.storage, &info.sender, &staker)?;
+        STATE.save(deps.storage, &state)?;
+
+        // Now redeem the LSM shares directly
+        let redeem_msg = create_redeem_tokens_msg(
+            env.contract.address.to_string(),
+            lsm_share.denom.clone(),
+            lsm_share.amount,
+        )?;
+
+        // Clean up active deposit after creating the message
+        ACTIVE_DEPOSIT.remove(deps.storage);
+
+        Ok(Response::new()
+            .add_submessage(SubMsg::reply_on_success(
+                redeem_msg,
+                REPLY_REDEEM_SHARES_DEPOSIT,
+            ))
+            .add_attribute("method", "deposit_lsm_shares")
+            .add_attribute("sender", info.sender)
+            .add_attribute("validator", lsm_info.validator)
+            .add_attribute("record_id", lsm_info.record_id)
+            .add_attribute("amount", lsm_share.amount)
+            .add_attribute("first_deposit", "true"))
+    }
 }
 
 /// Claim accumulated rewards
@@ -1574,18 +1621,26 @@ fn reply_claim_rewards_deposit(deps: DepsMut, env: Env) -> Result<Response, Cont
 }
 
 /// Reply handler after redeeming LSM shares for deposit
-/// This just cleans up the active deposit state
+/// This just cleans up the active deposit state (if it exists)
 fn reply_redeem_shares_deposit(deps: DepsMut, _env: Env) -> Result<Response, ContractError> {
-    let active_deposit = ACTIVE_DEPOSIT.load(deps.storage)?;
+    // Try to load active deposit - it might not exist if this was a first deposit
+    let active_deposit_opt = ACTIVE_DEPOSIT.may_load(deps.storage)?;
 
-    // Clean up active deposit
-    ACTIVE_DEPOSIT.remove(deps.storage);
+    // Clean up active deposit if it exists
+    if active_deposit_opt.is_some() {
+        ACTIVE_DEPOSIT.remove(deps.storage);
+    }
 
-    Ok(Response::new()
-        .add_attribute("action", "redeem_shares_deposit_reply")
-        .add_attribute("depositor", active_deposit.depositor)
-        .add_attribute("lsm_denom", active_deposit.lsm_denom)
-        .add_attribute("amount", active_deposit.amount))
+    let mut response = Response::new().add_attribute("action", "redeem_shares_deposit_reply");
+
+    if let Some(active_deposit) = active_deposit_opt {
+        response = response
+            .add_attribute("depositor", active_deposit.depositor)
+            .add_attribute("lsm_denom", active_deposit.lsm_denom)
+            .add_attribute("amount", active_deposit.amount);
+    }
+
+    Ok(response)
 }
 
 #[cfg(test)]
