@@ -54,3 +54,16 @@ pub struct ActiveWithdraw {
 }
 
 pub const ACTIVE_WITHDRAW: Item<ActiveWithdraw> = Item::new("active_withdraw");
+
+/// Temporary state for active deposit
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ActiveDeposit {
+    /// User who initiated the deposit
+    pub depositor: Addr,
+    /// LSM share denom being deposited
+    pub lsm_denom: String,
+    /// Amount of LSM shares being deposited
+    pub amount: Uint128,
+}
+
+pub const ACTIVE_DEPOSIT: Item<ActiveDeposit> = Item::new("active_deposit");
