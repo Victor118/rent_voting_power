@@ -67,3 +67,19 @@ pub struct ActiveDeposit {
 }
 
 pub const ACTIVE_DEPOSIT: Item<ActiveDeposit> = Item::new("active_deposit");
+
+/// Temporary state for tracking a voting session being created
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct ActiveVotingSessionCreation {
+    /// Proposal ID for the voting session
+    pub proposal_id: u64,
+    /// Number of lockers expected to be created
+    pub expected_lockers: u32,
+    /// Number of lockers actually created so far
+    pub created_count: u32,
+    /// Map of vote_option to locker address (as we receive replies)
+    pub locker_addresses: Vec<(i32, Addr)>,
+}
+
+pub const ACTIVE_VOTING_SESSION_CREATION: Item<ActiveVotingSessionCreation> =
+    Item::new("active_voting_session_creation");

@@ -1,7 +1,7 @@
 use cosmwasm_std::{
-    coins, entry_point, to_json_binary, BalanceResponse, BankMsg, BankQuery, Binary, Coin,
-    CosmosMsg, Deps, DepsMut, DistributionMsg, Env, MessageInfo, Order, QuerierWrapper, Reply,
-    Response, StakingMsg, StdResult, SubMsg, Uint128,
+    coins, entry_point, to_json_binary, BalanceResponse, BankMsg, BankQuery, Binary, CosmosMsg,
+    Deps, DepsMut, DistributionMsg, Env, MessageInfo, Order, QuerierWrapper, Reply, Response,
+    StdResult, SubMsg, Uint128,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
@@ -12,8 +12,9 @@ use lsm_types::{
 
 use crate::error::ContractError;
 use crate::state::{
-    ActiveClaim, ActiveDeposit, ActiveRental, ActiveWithdraw, ACTIVE_CLAIM, ACTIVE_DEPOSIT,
-    ACTIVE_RENTAL, ACTIVE_WITHDRAW, CONFIG, IS_PAUSED, STAKERS, STATE, VOTING_SESSIONS,
+    ActiveClaim, ActiveDeposit, ActiveRental, ActiveVotingSessionCreation, ActiveWithdraw,
+    ACTIVE_CLAIM, ACTIVE_DEPOSIT, ACTIVE_RENTAL, ACTIVE_VOTING_SESSION_CREATION, ACTIVE_WITHDRAW,
+    CONFIG, IS_PAUSED, STAKERS, STATE, VOTING_SESSIONS,
 };
 
 const CONTRACT_NAME: &str = "crates.io:lsm-staking";
@@ -28,6 +29,14 @@ const REPLY_TOKENIZE_SHARES_RENTAL: u64 = 2;
 const REPLY_TOKENIZE_SHARES_WITHDRAW: u64 = 3;
 const REPLY_CLAIM_REWARDS_DEPOSIT: u64 = 4;
 const REPLY_REDEEM_SHARES_DEPOSIT: u64 = 5;
+const REPLY_INSTANTIATE_LOCKER: u64 = 6;
+
+/// Payload for locker instantiation reply
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+struct LockerInstantiatePayload {
+    proposal_id: u64,
+    vote_option: i32,
+}
 
 #[entry_point]
 pub fn instantiate(
@@ -567,6 +576,16 @@ pub fn execute_create_voting_lockers(
         return Err(ContractError::VotingSessionExists { proposal_id });
     }
 
+    // Check if there's already a voting session creation in progress
+    if ACTIVE_VOTING_SESSION_CREATION
+        .may_load(deps.storage)?
+        .is_some()
+    {
+        return Err(ContractError::InvalidLsmShares {
+            reason: "Another voting session creation is already in progress".to_string(),
+        });
+    }
+
     // Query the governance proposal to get vote options
     // For Cosmos SDK governance, standard options are: 1=Yes, 2=Abstain, 3=No, 4=NoWithVeto
     // We'll create a locker for each option
@@ -575,8 +594,16 @@ pub fn execute_create_voting_lockers(
     use cosmwasm_std::WasmMsg;
     use proposal_locker_types::InstantiateMsg as LockerInstantiateMsg;
 
-    let mut locker_addresses: Vec<(i32, cosmwasm_std::Addr)> = Vec::new();
-    let mut messages: Vec<CosmosMsg> = Vec::new();
+    // Initialize the active voting session creation tracker
+    let active_creation = ActiveVotingSessionCreation {
+        proposal_id,
+        expected_lockers: vote_options.len() as u32,
+        created_count: 0,
+        locker_addresses: Vec::new(),
+    };
+    ACTIVE_VOTING_SESSION_CREATION.save(deps.storage, &active_creation)?;
+
+    let mut submessages: Vec<SubMsg> = Vec::new();
 
     // Create a locker for each vote option
     for vote_option in &vote_options {
@@ -587,8 +614,7 @@ pub fn execute_create_voting_lockers(
             manager: env.contract.address.to_string(),
         };
 
-        // Calculate the locker address deterministically
-        // We'll use the contract address as label with the vote option
+        // Use a unique label for each locker
         let label = format!("proposal_{}_option_{}", proposal_id, vote_option);
 
         let instantiate_msg = WasmMsg::Instantiate {
@@ -596,34 +622,28 @@ pub fn execute_create_voting_lockers(
             code_id: config.locker_code_id,
             msg: to_json_binary(&locker_init_msg)?,
             funds: vec![],
-            label: label.clone(),
+            label,
         };
 
-        messages.push(CosmosMsg::Wasm(instantiate_msg));
+        // Create payload with the vote option
+        let payload = LockerInstantiatePayload {
+            proposal_id,
+            vote_option: *vote_option,
+        };
 
-        // For now, we'll store a placeholder address. The actual address will be set
-        // in a reply handler or we can calculate it deterministically
-        // In production, you'd want to use a reply to get the actual instantiated address
-        let locker_addr = deps
-            .api
-            .addr_validate(&format!("locker_{}_{}", proposal_id, vote_option))?;
-        locker_addresses.push((*vote_option, locker_addr));
+        // Create SubMsg with reply and payload
+        let submsg =
+            SubMsg::reply_on_success(CosmosMsg::Wasm(instantiate_msg), REPLY_INSTANTIATE_LOCKER)
+                .with_payload(to_json_binary(&payload)?);
+
+        submessages.push(submsg);
     }
-
-    // Create and save the voting session
-    let voting_session = lsm_types::VotingSession {
-        proposal_id,
-        locker_addresses,
-        is_active: true,
-    };
-
-    VOTING_SESSIONS.save(deps.storage, proposal_id, &voting_session)?;
 
     // Set contract to paused
     IS_PAUSED.save(deps.storage, &true)?;
 
     Ok(Response::new()
-        .add_messages(messages)
+        .add_submessages(submessages)
         .add_attribute("method", "create_voting_lockers")
         .add_attribute("proposal_id", proposal_id.to_string())
         .add_attribute("num_lockers", vote_options.len().to_string()))
@@ -1328,6 +1348,7 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> Result<Response, ContractEr
         REPLY_TOKENIZE_SHARES_WITHDRAW => reply_tokenize_shares_withdraw(deps, env),
         REPLY_CLAIM_REWARDS_DEPOSIT => reply_claim_rewards_deposit(deps, env),
         REPLY_REDEEM_SHARES_DEPOSIT => reply_redeem_shares_deposit(deps, env),
+        REPLY_INSTANTIATE_LOCKER => reply_instantiate_locker(deps, msg),
         _ => Err(ContractError::InvalidLsmShares {
             reason: format!("Unknown reply ID: {}", msg.id),
         }),
@@ -1586,7 +1607,7 @@ fn reply_claim_rewards_deposit(deps: DepsMut, env: Env) -> Result<Response, Cont
     STATE.save(deps.storage, &state)?;
 
     let mut messages = vec![];
-    let mut response = Response::new()
+    let response = Response::new()
         .add_attribute("action", "claim_rewards_deposit_reply")
         .add_attribute("depositor", active_deposit.depositor.to_string())
         .add_attribute("rewards_received", rewards_received.to_string())
@@ -1638,6 +1659,100 @@ fn reply_redeem_shares_deposit(deps: DepsMut, _env: Env) -> Result<Response, Con
             .add_attribute("depositor", active_deposit.depositor)
             .add_attribute("lsm_denom", active_deposit.lsm_denom)
             .add_attribute("amount", active_deposit.amount);
+    }
+
+    Ok(response)
+}
+
+/// Reply handler after instantiating a locker contract
+/// This:
+/// 1. Parses the payload to get proposal_id and vote_option
+/// 2. Parses the reply to get the instantiated contract address
+/// 3. Updates the active voting session creation with this address
+/// 4. If all lockers are created, creates the VotingSession and cleans up
+fn reply_instantiate_locker(deps: DepsMut, msg: Reply) -> Result<Response, ContractError> {
+    // Parse the payload to get the vote option
+    let payload: LockerInstantiatePayload = cosmwasm_std::from_json(&msg.payload)?;
+
+    // Parse the reply result to get the contract address
+    let res = msg
+        .result
+        .into_result()
+        .map_err(|e| ContractError::InvalidLsmShares {
+            reason: format!("Failed to instantiate locker: {}", e),
+        })?;
+
+    // Extract contract address from MsgInstantiateContractResponse
+    // The address is in the events under wasm-instantiate with _contract_address attribute
+    let contract_address = res
+        .events
+        .iter()
+        .find(|e| e.ty == "instantiate")
+        .and_then(|e| {
+            e.attributes
+                .iter()
+                .find(|attr| attr.key == "_contract_address")
+                .map(|attr| attr.value.clone())
+        })
+        .ok_or(ContractError::InvalidLsmShares {
+            reason: "Could not find contract address in instantiate reply".to_string(),
+        })?;
+
+    let locker_addr = deps.api.addr_validate(&contract_address)?;
+
+    // Load and update the active voting session creation
+    let mut active_creation = ACTIVE_VOTING_SESSION_CREATION.load(deps.storage)?;
+
+    // Verify this is for the same proposal
+    if active_creation.proposal_id != payload.proposal_id {
+        return Err(ContractError::InvalidLsmShares {
+            reason: format!(
+                "Payload proposal_id {} does not match active creation proposal_id {}",
+                payload.proposal_id, active_creation.proposal_id
+            ),
+        });
+    }
+
+    // Add this locker address
+    active_creation
+        .locker_addresses
+        .push((payload.vote_option, locker_addr.clone()));
+    active_creation.created_count += 1;
+
+    let mut response = Response::new()
+        .add_attribute("action", "instantiate_locker_reply")
+        .add_attribute("proposal_id", payload.proposal_id.to_string())
+        .add_attribute("vote_option", payload.vote_option.to_string())
+        .add_attribute("locker_address", locker_addr.to_string())
+        .add_attribute("created_count", active_creation.created_count.to_string())
+        .add_attribute(
+            "expected_count",
+            active_creation.expected_lockers.to_string(),
+        );
+
+    // Check if all lockers have been created
+    if active_creation.created_count == active_creation.expected_lockers {
+        // All lockers are created! Create the voting session
+        let voting_session = lsm_types::VotingSession {
+            proposal_id: active_creation.proposal_id,
+            locker_addresses: active_creation.locker_addresses.clone(),
+            is_active: true,
+        };
+
+        VOTING_SESSIONS.save(deps.storage, active_creation.proposal_id, &voting_session)?;
+
+        // Clean up the active creation state
+        ACTIVE_VOTING_SESSION_CREATION.remove(deps.storage);
+
+        response = response
+            .add_attribute("voting_session_created", "true")
+            .add_attribute(
+                "num_lockers",
+                voting_session.locker_addresses.len().to_string(),
+            );
+    } else {
+        // Still waiting for more lockers, save the updated state
+        ACTIVE_VOTING_SESSION_CREATION.save(deps.storage, &active_creation)?;
     }
 
     Ok(response)
