@@ -10,7 +10,7 @@ CosmWasm smart contracts for LSM (Liquid Staking Module) staking and governance 
 
 ```bash
 # 1. Build contracts
-make build
+make build-docker
 
 # 2. Deploy to devnet
 make deploy-devnet
@@ -23,9 +23,11 @@ All dependencies and configuration are included in the repository - no manual se
 This project implements a voting power rental system for Cosmos Hub governance. It consists of two types of smart contracts:
 
 ### 1. LSM-Staking Contract (Main Contract)
+
 The main contract that manages atom deposits and voting power rental.
 
 ### 2. Proposal-Option-Locker Contracts
+
 Secondary contracts dynamically instantiated for each voting option of a governance proposal.
 
 ## How It Works
@@ -233,6 +235,7 @@ Open a governance proposal and instantiate option-lockers (admin only):
 ```
 
 This action will:
+
 1. Instantiate 4 proposal-option-locker contracts (YES, NO, NO_WITH_VETO, ABSTAIN)
 2. Each contract automatically votes for its option
 3. Block deposit and withdraw operations
@@ -251,6 +254,7 @@ Rent voting power to support an option (user):
 ```
 
 This action will:
+
 1. Tokenize the specified atom amount
 2. Transfer the tokens to the corresponding option-locker contract
 3. The option-locker redeems these shares, increasing the vote for this option
@@ -266,6 +270,7 @@ Close a proposal and destroy the option-lockers (admin only):
 ```
 
 This action will:
+
 1. Destroy all option-locker contracts
 2. Recover staking rewards from each option-locker
 3. Recover all staked atoms (tokenized then redeemed)
@@ -322,6 +327,7 @@ Destroy the contract and return all assets to the LSM contract (admin only):
 ```
 
 This action will:
+
 1. Claim all staking rewards
 2. Tokenize all staked atoms
 3. Send rewards and tokenized tokens to the main LSM contract
@@ -628,4 +634,3 @@ Contributions are welcome! Please ensure:
 - All tests pass
 - Code follows Rust formatting standards (`cargo fmt`)
 - No clippy warnings (`cargo clippy`)
-
