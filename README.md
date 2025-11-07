@@ -20,112 +20,112 @@ All dependencies and configuration are included in the repository - no manual se
 
 ## Overview
 
-Ce projet implémente un système de location de voting power pour la gouvernance du Cosmos Hub. Il se compose de deux types de contrats intelligents:
+This project implements a voting power rental system for Cosmos Hub governance. It consists of two types of smart contracts:
 
-### 1. LSM-Staking Contract (Contrat Principal)
-Le contrat principal qui gère les dépôts d'atoms et la location du voting power.
+### 1. LSM-Staking Contract (Main Contract)
+The main contract that manages atom deposits and voting power rental.
 
 ### 2. Proposal-Option-Locker Contracts
-Des contrats secondaires instantiés dynamiquement pour chaque option de vote d'une proposition de gouvernance.
+Secondary contracts dynamically instantiated for each voting option of a governance proposal.
 
-## Comment ça Fonctionne
+## How It Works
 
-### Phase 1: Dépôt et Staking Normal
+### Phase 1: Regular Deposit and Staking
 
-1. **Dépôt de LSM Shares**: Les utilisateurs déposent des LSM shares du validateur spécifié lors de l'instantiation
-2. **Redeem Automatique**: Dès réception, les LSM shares sont automatiquement redeem
-3. **Custody des Atoms**: Le contrat conserve la custody des atoms en staking à tout moment
-4. **Gestion des Rewards**: Les utilisateurs peuvent claim leurs rewards ou withdraw leurs LSM shares à tout moment
+1. **LSM Share Deposit**: Users deposit LSM shares from the validator specified during instantiation
+2. **Automatic Redeem**: Upon receipt, LSM shares are automatically redeemed
+3. **Atom Custody**: The contract maintains custody of staked atoms at all times
+4. **Reward Management**: Users can claim their rewards or withdraw their LSM shares at any time
 
-### Phase 2: Ouverture d'une Proposition de Gouvernance
+### Phase 2: Opening a Governance Proposal
 
-1. **Ouverture par l'Admin**: Un admin peut ouvrir la location du voting power pour une proposition spécifique
-2. **Instantiation des Option-Lockers**: Le système instantie autant de contrats "proposal-option-locker" qu'il y a d'options possibles:
-   - YES locker → vote YES
-   - NO locker → vote NO
-   - NO_WITH_VETO locker → vote NO_WITH_VETO
-   - ABSTAIN locker → vote ABSTAIN
-3. **Vote Automatique**: Chaque contrat option-locker vote automatiquement pour son option respective lors de son instantiation
-4. **Blocage des Opérations**: Pendant qu'une proposition est en cours, les utilisateurs ne peuvent plus deposer ou retirer
+1. **Admin Opens**: An admin can open voting power rental for a specific proposal
+2. **Option-Locker Instantiation**: The system instantiates as many "proposal-option-locker" contracts as there are possible options:
+   - YES locker → votes YES
+   - NO locker → votes NO
+   - NO_WITH_VETO locker → votes NO_WITH_VETO
+   - ABSTAIN locker → votes ABSTAIN
+3. **Automatic Voting**: Each option-locker contract automatically votes for its respective option upon instantiation
+4. **Operation Lock**: While a proposal is active, users can no longer deposit or withdraw
 
-### Phase 3: Location du Voting Power
+### Phase 3: Voting Power Rental
 
-1. **Location par les Utilisateurs**: Un utilisateur peut louer du voting power d'atoms en choisissant une option à soutenir
-2. **Tokenization**: Le montant d'atoms choisi est tokenizé
-3. **Transfert au Option-Locker**: Les tokens sont transférés au smart contract de l'option choisie
-4. **Redeem et Vote**: Le contrat option-locker redeem ces shares, ce qui augmente le vote alloué à cette option
+1. **User Rental**: A user can rent atom voting power by choosing an option to support
+2. **Tokenization**: The chosen atom amount is tokenized
+3. **Transfer to Option-Locker**: The tokens are transferred to the smart contract of the chosen option
+4. **Redeem and Vote**: The option-locker contract redeems these shares, which increases the vote allocated to this option
 
-### Phase 4: Fin de la Proposition
+### Phase 4: End of Proposal
 
-1. **Destruction des Option-Lockers**: Quand la proposition est terminée, les contrats option-locker peuvent être détruits
-2. **Récupération des Rewards**: Chaque option-locker récupère les rewards de staking accumulés
-3. **Envoi au LSM Contract**: Les rewards sont envoyés au contrat LSM principal
-4. **Tokenization et Redeem**: Les option-lockers tokenizent tous leurs atoms stakés et les envoient au contrat LSM qui les redeem
-5. **Déblocage**: Le contrat LSM redébloque les opérations de deposit et withdraw
+1. **Option-Locker Destruction**: When the proposal ends, the option-locker contracts can be destroyed
+2. **Reward Recovery**: Each option-locker recovers accumulated staking rewards
+3. **Send to LSM Contract**: The rewards are sent to the main LSM contract
+4. **Tokenization and Redeem**: The option-lockers tokenize all their staked atoms and send them to the LSM contract which redeems them
+5. **Unlock**: The LSM contract unlocks deposit and withdraw operations
 
 ## Features
 
-- **LSM Share Deposits**: Accepte les LSM shares du validateur spécifié à l'instantiation, les redeem automatiquement
-- **Validator Verification**: Valide que le validateur LSM share existe on-chain avant d'accepter
-- **Cumulative Reward Index Algorithm**: Distribution équitable et gas-efficient des rewards
-- **Reward Claiming**: Les utilisateurs peuvent claim leurs rewards de staking accumulés
-- **Staking Withdrawal**: Les utilisateurs peuvent withdraw (unstake) leurs tokens, ils reçoivent des LSM shares
-- **Voting Power Rental**: Location du voting power pour les propositions de gouvernance
-- **Dynamic Proposal Option Lockers**: Instantiation dynamique de contrats pour chaque option de vote
-- **Automatic Voting**: Vote automatique pour chaque option lors de l'instantiation des lockers
-- **Operation Lock During Proposals**: Blocage des dépôts/retraits pendant les propositions actives
-- **Admin Functions**: Le propriétaire du contrat peut mettre à jour la configuration et gérer les propositions
+- **LSM Share Deposits**: Accepts LSM shares from the validator specified at instantiation, automatically redeems them
+- **Validator Verification**: Validates that the LSM share validator exists on-chain before accepting
+- **Cumulative Reward Index Algorithm**: Fair and gas-efficient reward distribution
+- **Reward Claiming**: Users can claim their accumulated staking rewards
+- **Staking Withdrawal**: Users can withdraw (unstake) their tokens, they receive LSM shares
+- **Voting Power Rental**: Rent voting power for governance proposals
+- **Dynamic Proposal Option Lockers**: Dynamic instantiation of contracts for each voting option
+- **Automatic Voting**: Automatic voting for each option upon locker instantiation
+- **Operation Lock During Proposals**: Deposits/withdrawals are blocked during active proposals
+- **Admin Functions**: The contract owner can update configuration and manage proposals
 
 ## Architecture
 
-Le projet est organisé en workspace Cargo avec deux contrats:
+The project is organized as a Cargo workspace with two contracts:
 
 ```
 rent_voting_power/
 ├── contracts/
-│   ├── lsm-staking/              # Contrat principal
+│   ├── lsm-staking/              # Main contract
 │   │   ├── src/
-│   │   │   ├── contract.rs       # Logique du contrat (instantiate, execute, query)
-│   │   │   ├── error.rs          # Types d'erreurs
-│   │   │   ├── state.rs          # Définitions du stockage d'état
-│   │   │   └── lib.rs            # Exports de la librairie
+│   │   │   ├── contract.rs       # Contract logic (instantiate, execute, query)
+│   │   │   ├── error.rs          # Error types
+│   │   │   ├── state.rs          # State storage definitions
+│   │   │   └── lib.rs            # Library exports
 │   │   └── Cargo.toml
-│   └── proposal-option-locker/   # Contrat option de vote
+│   └── proposal-option-locker/   # Vote option contract
 │       ├── src/
-│       │   ├── contract.rs       # Logique du contrat option-locker
-│       │   ├── error.rs          # Types d'erreurs
-│       │   ├── state.rs          # Définitions du stockage d'état
-│       │   └── lib.rs            # Exports de la librairie
+│       │   ├── contract.rs       # Option-locker contract logic
+│       │   ├── error.rs          # Error types
+│       │   ├── state.rs          # State storage definitions
+│       │   └── lib.rs            # Library exports
 │       └── Cargo.toml
 └── packages/
-    └── lsm-types/                # Types et messages partagés
+    └── lsm-types/                # Shared types and messages
         ├── src/
-        │   └── lib.rs            # Types de messages et d'état
+        │   └── lib.rs            # Message and state types
         └── Cargo.toml
 ```
 
-### Flux de Données
+### Data Flow
 
 ```
-Utilisateur
-    ↓ (dépose LSM shares)
+User
+    ↓ (deposits LSM shares)
 LSM-Staking Contract
-    ↓ (redeem → atoms stakés)
-Custody des atoms
-    ↓ (proposition ouverte)
-Instantiation de 4 Proposal-Option-Locker Contracts
-    ├─ YES Option Locker (vote YES)
-    ├─ NO Option Locker (vote NO)
-    ├─ NO_WITH_VETO Option Locker (vote NO_WITH_VETO)
-    └─ ABSTAIN Option Locker (vote ABSTAIN)
-    ↓ (utilisateur loue voting power)
-Tokenization des atoms → Transfert au Option-Locker choisi
-    ↓ (redeem → augmente le vote)
-Vote alloué à l'option
-    ↓ (fin de proposition)
-Destruction des Option-Lockers
-    ↓ (récupération rewards + tokenization)
-LSM-Staking Contract (redeem et déblocage)
+    ↓ (redeem → staked atoms)
+Atom Custody
+    ↓ (proposal opened)
+Instantiation of 4 Proposal-Option-Locker Contracts
+    ├─ YES Option Locker (votes YES)
+    ├─ NO Option Locker (votes NO)
+    ├─ NO_WITH_VETO Option Locker (votes NO_WITH_VETO)
+    └─ ABSTAIN Option Locker (votes ABSTAIN)
+    ↓ (user rents voting power)
+Atom Tokenization → Transfer to chosen Option-Locker
+    ↓ (redeem → increases vote)
+Vote allocated to option
+    ↓ (proposal ends)
+Destruction of Option-Lockers
+    ↓ (reward recovery + tokenization)
+LSM-Staking Contract (redeem and unlock)
 ```
 
 ## Cumulative Reward Index Algorithm
@@ -165,7 +165,7 @@ The contract uses a cumulative reward index algorithm for efficient reward distr
 ```rust
 {
   "staking_denom": "uatom",        // Base staking denom
-  "validator": "cosmosvaloper1...", // Validateur pour les LSM shares
+  "validator": "cosmosvaloper1...", // Validator for LSM shares
   "owner": "cosmos1..."             // Contract admin
 }
 ```
@@ -174,29 +174,29 @@ The contract uses a cumulative reward index algorithm for efficient reward distr
 
 ##### DepositLsmShares
 
-Déposer des LSM shares pour être redeem et stakés:
+Deposit LSM shares to be redeemed and staked:
 
 ```rust
 {
   "deposit_lsm_shares": {}
 }
-// Envoyer EXACTEMENT UN token LSM share comme funds
-// Format du denom LSM: {validator_address}/{record_id}
+// Send EXACTLY ONE LSM share token as funds
+// LSM denom format: {validator_address}/{record_id}
 // Example: cosmosvaloper1abc.../123
 ```
 
-Le contrat va:
+The contract will:
 
-1. Vérifier qu'exactement un token est envoyé
-2. Parser et valider le format du denom LSM (validator/record_id)
-3. Vérifier que l'adresse du validateur est valide
-4. Vérifier que le record_id est un nombre valide
-5. Redeem les LSM shares et les staker
-6. **Bloqué si une proposition est en cours**
+1. Verify exactly one token is sent
+2. Parse and validate the LSM denom format (validator/record_id)
+3. Verify the validator address is valid
+4. Verify the record_id is a valid number
+5. Redeem the LSM shares and stake them
+6. **Blocked if a proposal is active**
 
 ##### ClaimRewards
 
-Réclamer les rewards de staking accumulés:
+Claim accumulated staking rewards:
 
 ```rust
 {
@@ -206,7 +206,7 @@ Réclamer les rewards de staking accumulés:
 
 ##### Withdraw
 
-Retirer (unstake) des tokens d'un validateur:
+Withdraw (unstake) tokens from a validator:
 
 ```rust
 {
@@ -217,29 +217,29 @@ Retirer (unstake) des tokens d'un validateur:
 }
 ```
 
-**Bloqué si une proposition est en cours**
+**Blocked if a proposal is active**
 
 ##### OpenProposal
 
-Ouvrir une proposition de gouvernance et instantier les option-lockers (admin only):
+Open a governance proposal and instantiate option-lockers (admin only):
 
 ```rust
 {
   "open_proposal": {
     "proposal_id": 123,
-    "option_locker_code_id": 456  // Code ID du contrat proposal-option-locker
+    "option_locker_code_id": 456  // Code ID of the proposal-option-locker contract
   }
 }
 ```
 
-Cette action va:
-1. Instantier 4 contrats proposal-option-locker (YES, NO, NO_WITH_VETO, ABSTAIN)
-2. Chaque contrat vote automatiquement pour son option
-3. Bloquer les opérations de deposit et withdraw
+This action will:
+1. Instantiate 4 proposal-option-locker contracts (YES, NO, NO_WITH_VETO, ABSTAIN)
+2. Each contract automatically votes for its option
+3. Block deposit and withdraw operations
 
 ##### RentVotingPower
 
-Louer du voting power pour soutenir une option (utilisateur):
+Rent voting power to support an option (user):
 
 ```rust
 {
@@ -250,14 +250,14 @@ Louer du voting power pour soutenir une option (utilisateur):
 }
 ```
 
-Cette action va:
-1. Tokenizer le montant d'atoms spécifié
-2. Transférer les tokens au contrat option-locker correspondant
-3. Le option-locker redeem ces shares, augmentant le vote pour cette option
+This action will:
+1. Tokenize the specified atom amount
+2. Transfer the tokens to the corresponding option-locker contract
+3. The option-locker redeems these shares, increasing the vote for this option
 
 ##### CloseProposal
 
-Fermer une proposition et détruire les option-lockers (admin only):
+Close a proposal and destroy the option-lockers (admin only):
 
 ```rust
 {
@@ -265,15 +265,15 @@ Fermer une proposition et détruire les option-lockers (admin only):
 }
 ```
 
-Cette action va:
-1. Détruire tous les contrats option-locker
-2. Récupérer les rewards de staking de chaque option-locker
-3. Récupérer tous les atoms stakés (tokenizés puis redeem)
-4. Débloquer les opérations de deposit et withdraw
+This action will:
+1. Destroy all option-locker contracts
+2. Recover staking rewards from each option-locker
+3. Recover all staked atoms (tokenized then redeemed)
+4. Unlock deposit and withdraw operations
 
 ##### UpdateConfig
 
-Mettre à jour la configuration du contrat (owner only):
+Update contract configuration (owner only):
 
 ```rust
 {
@@ -289,31 +289,31 @@ Mettre à jour la configuration du contrat (owner only):
 
 ```rust
 {
-  "lsm_staking_contract": "cosmos1...",  // Adresse du contrat LSM principal
-  "proposal_id": 123,                     // ID de la proposition
+  "lsm_staking_contract": "cosmos1...",  // Address of the main LSM contract
+  "proposal_id": 123,                     // Proposal ID
   "vote_option": "Yes",                   // "Yes" | "No" | "NoWithVeto" | "Abstain"
-  "validator": "cosmosvaloper1..."        // Validateur à utiliser
+  "validator": "cosmosvaloper1..."        // Validator to use
 }
 ```
 
-Le contrat vote automatiquement pour l'option spécifiée lors de l'instantiation.
+The contract automatically votes for the specified option upon instantiation.
 
 #### ExecuteMsg
 
 ##### ReceiveTokenizedShares
 
-Recevoir des shares tokenizés du contrat LSM principal:
+Receive tokenized shares from the main LSM contract:
 
 ```rust
 {
   "receive_tokenized_shares": {}
 }
-// Les shares sont automatiquement redeem pour augmenter le vote
+// Shares are automatically redeemed to increase the vote
 ```
 
 ##### Destroy
 
-Détruire le contrat et retourner tous les assets au contrat LSM (admin only):
+Destroy the contract and return all assets to the LSM contract (admin only):
 
 ```rust
 {
@@ -321,10 +321,10 @@ Détruire le contrat et retourner tous les assets au contrat LSM (admin only):
 }
 ```
 
-Cette action va:
-1. Claim tous les rewards de staking
-2. Tokenizer tous les atoms stakés
-3. Envoyer rewards et tokens tokenizés au contrat LSM principal
+This action will:
+1. Claim all staking rewards
+2. Tokenize all staked atoms
+3. Send rewards and tokenized tokens to the main LSM contract
 
 ### QueryMsg
 
@@ -499,7 +499,7 @@ gaiad tx wasm execute $LSM_CONTRACT \
   --from admin_wallet --gas auto --gas-adjustment 1.3 -y
 ```
 
-Cette commande va instantier 4 contrats option-locker et bloquer les dépôts/retraits.
+This command will instantiate 4 option-locker contracts and block deposits/withdrawals.
 
 ### 7. Rent Voting Power (Phase 3 - User)
 
@@ -522,7 +522,7 @@ gaiad tx wasm execute $LSM_CONTRACT \
   --from admin_wallet --gas auto --gas-adjustment 1.3 -y
 ```
 
-Cette commande va détruire les option-lockers, récupérer les rewards et débloquer les dépôts/retraits.
+This command will destroy the option-lockers, recover rewards and unlock deposits/withdrawals.
 
 ### 9. Query Staker Info
 
@@ -602,20 +602,20 @@ The tests cover:
 
 ## Security Considerations
 
-1. **LSM Denom Validation**: Le contrat valide le format des LSM shares:
-   - Format correct (validator/record_id)
-   - Préfixe d'adresse validateur valide
-   - Record ID numérique
-   - Validateur existe on-chain
-2. **Single Token Deposits**: N'accepte qu'un seul token par dépôt pour éviter la confusion
-3. **Overflow Protection**: Utilise des opérations mathématiques vérifiées (checked math)
-4. **Authorization**: Seul le propriétaire peut mettre à jour la configuration et gérer les propositions
-5. **Decimal Precision**: Utilise `Decimal256` pour les calculs de rewards haute précision
-6. **Zero Amount Checks**: Empêche les opérations avec des montants nuls
-7. **Proposal Lock**: Bloque les dépôts/retraits pendant qu'une proposition est active pour garantir l'intégrité du vote
-8. **Option-Locker Isolation**: Chaque option de vote est isolée dans son propre contrat pour éviter les interférences
-9. **Automatic Voting**: Les votes sont automatiques lors de l'instantiation pour éviter les erreurs humaines
-10. **Controlled Destruction**: Les option-lockers ne peuvent être détruits que par le contrat LSM principal
+1. **LSM Denom Validation**: The contract validates the LSM share format:
+   - Correct format (validator/record_id)
+   - Valid validator address prefix
+   - Numeric record ID
+   - Validator exists on-chain
+2. **Single Token Deposits**: Only accepts one token per deposit to avoid confusion
+3. **Overflow Protection**: Uses checked math operations
+4. **Authorization**: Only the owner can update configuration and manage proposals
+5. **Decimal Precision**: Uses `Decimal256` for high-precision reward calculations
+6. **Zero Amount Checks**: Prevents operations with zero amounts
+7. **Proposal Lock**: Blocks deposits/withdrawals while a proposal is active to guarantee vote integrity
+8. **Option-Locker Isolation**: Each voting option is isolated in its own contract to prevent interference
+9. **Automatic Voting**: Votes are automatic upon instantiation to avoid human errors
+10. **Controlled Destruction**: Option-lockers can only be destroyed by the main LSM contract
 
 ## License
 
